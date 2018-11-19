@@ -83,7 +83,7 @@ def get_true_false_positive_negative(y_pred, y):
 
 
 def test_svm_model(kernel, training_examples, training_labels, dev_set, dev_labels, test_set, test_labels, gamma='auto'):
-    print('Kernel:', kernel)
+    print('Kernel:', kernel, ',gamma:', gamma)
     model = svm.SVC(kernel=kernel, gamma=gamma, random_state=0)
     model.fit(training_examples, training_labels)
     print('dev score: ', model.score(dev_set, dev_labels))
