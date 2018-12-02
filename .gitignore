@@ -1,0 +1,13 @@
+probable_junk/
+microarray/
+ps2_code_sol/
+Midterm/
+data/
+*.pdf
+*.zip
+Solutions/
+*.png
+output/
+__pycache__/
+HW0.pdf
+tex/
