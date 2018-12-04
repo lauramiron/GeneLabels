@@ -1,5 +1,6 @@
 import pdb, glob, pickle, sys, os
 import numpy as np
+from sklearn import svm, ensemble
 from sklearn.neighbors import NearestNeighbors
 # from shlex import quote
 import networkx
@@ -7,6 +8,8 @@ import obonet
 import subprocess
 import time
 
+RAND_SEED=0
+RAND_STATE=np.random.RandomState(seed=RAND_SEED)
 DATA_DIR =r'data/'
 OUTPUT_DIR=r'output/'
 RESULTS_DIR=r'results/'
@@ -146,13 +149,14 @@ def RunKnnOnNulls():
 	# are not null in that feature
 	models = []
 	for j in range(f):
-		non_null_data = smoothed_data[np.where(~np.isnan(data_arr[:,j]))]
+		non_null_idxs = np.where(~np.isnan(data_arr[:,j]))
+		non_null_data = smoothed_data[non_null_idxs]
 		model = NearestNeighbors(n_neighbors=16).fit(non_null_data)
-		models.append(model)
+		models.append((model,non_null_idxs))
 	
 	# iterate through training examples and replace null values with
 	# value from that feature of nearest centroid
-	for i in np.where(null_axes==True)[0]:
+	for i in range(m):
 		if i%1000 == 0: print("completed "+str(i)+" iterations")
 		example = np.copy(data_arr[i])
 		nan_indices = []
@@ -163,9 +167,17 @@ def RunKnnOnNulls():
 		if np.isnan(example).any():
 			pdb.set_trace()
 		for j in nan_indices:
-			distances, indices = models[j].kneighbors(example.reshape(1,-1))
-			centroid = np.average(data_arr[indices.flatten()],axis=0,weights=(1/distances.flatten()))
+			model, model_data_idxs = models[j]
+			model_data = smoothed_data[model_data_idxs]
+			distances, indices = model.kneighbors(example.reshape(1,-1))
+			centroid = np.average(non_null_data[indices.flatten()],axis=0,weights=(1/distances.flatten()))
+			try:
+				assert(np.isnan(centroid).any()==False)
+			except:
+				pdb.set_trace()
 			data_arr[i,j] = centroid[j]
+		assert(np.isnan(data_arr[i]).any()==False)
+	assert(np.isnan(data_arr).any()==False)
 	np.savetxt(MA_NONNULL_DATA,data_arr)
 
 def MakeGeneAndGoDicts():
@@ -307,14 +319,15 @@ def GetKMaxLabels(k=1):
 	return -(go_data.sum(axis=1)).argsort()[:k]
 
 def LoadCombinedData():
-	pairwise_data = np.loadtxt(PAIR_FULL_DATA_FILE)
+	pairwise_data = np.loadtxt(PAIR_DATA_FILE)
 	ma_data = np.loadtxt(MA_NONNULL_DATA)
-	data = np.concatenate(pairwise_data,ma_data)
+	# pdb.set_trace()
+	data = np.concatenate((pairwise_data,ma_data),axis=1)
 	label_data = np.loadtxt(GO_LABEL_ARR_FILE)
-	assert(data.shape[0]==label_data.shape[0])
+	# assert(data.shape[0]==label_data.shape[0])
 	go_dict = pickle.load(open(GO_DICT_FILE,'rb'))
 	genes_dict = pickle.load(open(GENES_DICT_FILE,'rb'))
-	return data, label_data, {v: k for k, v in go_dict.items()}, {v: k for k, v in genes_dict.items()}
+	return pairwise_data, label_data, {v: k for k, v in go_dict.items()}, {v: k for k, v in genes_dict.items()}
 
 def _modelfnames(model_name='defaultparams'):
 	timestring = time.strftime("%m-%d-%H.%M")
@@ -328,22 +341,24 @@ def DefaultParametersFullData(kernel='linear',C=1.0,gamma='scale'):
     models_dict = {}
 
     scores_file, models_file = _modelfnames('defaultparams')
-    open(scores_file,'w').write("GOID\tscore\tkernel\tC\tgamma\n")
+    open(scores_file,'w+').write("GOID\tscore\tkernel\tC\tgamma\n")
     for i in range(training_labels.shape[1]):
     	goid = go_inv_dict[i]
     	# geneid = genes_inv_dict
     	model_training_data = training_data[np.where(training_labels[:,i]!=-1)]
-    	model_training_labels = training_labels[np.where(training_labels[:,i]!=-1)]
+    	pdb.set_trace()
+    	model_training_labels = training_labels[np.where(training_labels[:,i]!=-1)][:,i]
     	model, score = test_svm_model(kernel,model_training_data,model_training_labels,C,gamma)
     	models_dict[goid] = model
     	open(scores_file,'a').write(goid+'\t'+score+'\t'+kernel+'\t'+gamma+'\n')
-    	print(str(i+1)+'/'+str(training_labels.shape[1]+' ID:'+goid+' acc: '+str(score))
+    	print(str(i+1)+'/'+str(training_labels.shape[1]+' ID:'+goid+' acc: '+str(score)))
+    	break
     np.savetxt(models_file,models_dict)
 
 
 def make_test_set(training_examples,training_labels):
     num_test_samples = int(training_examples.shape[0]*0.632)
-    test_idxs = np.random.choice(range(0,training_examples.shape[0]),size=num_test_samples,replace=True)
+    test_idxs = RAND_STATE.random.choice(range(0,training_examples.shape[0]),size=num_test_samples,replace=True)
     test_set = np.zeros(shape=(num_test_samples,training_examples.shape[1]))
     test_labels = np.zeros(shape=(num_test_samples,training_labels.shape[1]))
     for i in range(0,num_test_samples):
@@ -353,9 +368,9 @@ def make_test_set(training_examples,training_labels):
 
 def test_svm_model(kernel, training_examples, training_labels, C=1.0, gamma='scale'):
     # print('Kernel:', kernel, ',gamma:', gamma)
-    model = ensemble.BaggingClassifier(svm.SVC(kernel=kernel, gamma=gamma, random_state=0), max_samples=0.632)
+    model = ensemble.BaggingClassifier(svm.SVC(kernel=kernel, gamma=gamma, random_state=RAND_SEED), max_samples=0.632)
     model.fit(training_examples, training_labels)
-    test_set, test_labels = make_test_set()
+    test_set, test_labels = make_test_set(training_examples,training_labels)
     test_score = model.score(test_set, test_labels)
     return model, test_score
     # print('test score: ', model.score(test_set, test_labels))
