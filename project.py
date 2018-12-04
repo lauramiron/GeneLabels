@@ -7,6 +7,7 @@ import networkx
 import obonet
 import subprocess
 import time
+import argparse
 
 RAND_SEED=0
 RAND_STATE=np.random.RandomState(seed=RAND_SEED)
@@ -316,7 +317,7 @@ def GetKMaxLabels(k=1):
 	# go_dict = pickle.load(open(GO_DICT_FILE,'rb'))
 	go_data = np.load(GO_LABEL_ARR_FILE)
 	# inv_go_dict = {v: k for k, v in go_dict.items()}
-	return -(go_data.sum(axis=1)).argsort()[:k]
+	return -(go_data.sum(axis=0)).argsort()[:k]
 
 def LoadCombinedData():
 	pairwise_data = np.loadtxt(PAIR_DATA_FILE)
@@ -340,7 +341,7 @@ def _modelDir(model_name='lineardefault'):
 	os.mkdir(dirname)
 	return dirname
 
-def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto'):
+def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto',n_estimators=1,startID=0):
 	print('-----Running SVM on all GO IDs-----')   
 	training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
 	models_dict = {}
@@ -349,11 +350,13 @@ def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto'):
 	model_dir = _modelDir()
 	scores_file = os.path.join(model_dir,'scores.txt')
 	open(scores_file,'w+').write("GOID\tscore\tkernel\tC\tgamma\n")
-	for i in range(training_labels.shape[1]):
+	for i in range(startID,training_labels.shape[1]):
 		goid = go_inv_dict[i]
 		model_training_data = training_data[np.where(training_labels[:,i]!=-1)]
 		model_training_labels = training_labels[np.where(training_labels[:,i]!=-1)][:,i]
-		model, score = test_svm_model(kernel,model_training_data,model_training_labels,C,gamma)
+		if not (model_training_labels==1).any(): model, score = None, -1
+		else:
+			model, score = test_svm_model(kernel,model_training_data,model_training_labels,C,gamma,n_estimators)
 		models_dict[goid] = model
 		open(scores_file,'a').write(goid+'\t'+str(score)+'\t'+str(kernel)+'\t'+str(gamma)+'\n')
 		print(str(i+1)+'/'+str(training_labels.shape[1])+' ID:'+goid+' acc: '+str(score))
@@ -371,14 +374,13 @@ def make_test_set(training_examples,training_labels):
 		test_labels[i] = training_labels[test_idxs[i]]
 	return test_set, test_labels
 
-def test_svm_model(kernel, training_examples, training_labels, C=1.0, gamma='scale'):
-	# print('Kernel:', kernel, ',gamma:', gamma)
-	model = ensemble.BaggingClassifier(svm.SVC(kernel=kernel, gamma=gamma, random_state=RAND_SEED), n_estimators=1,max_samples=0.632)
+def test_svm_model(kernel, training_examples, training_labels, C=1.0, gamma='auto',n_estimators=10):
+	model = ensemble.BaggingClassifier(svm.SVC(kernel=kernel, gamma=gamma, random_state=RAND_SEED), n_estimators=n_estimators,max_samples=0.632)
 	model.fit(training_examples, training_labels)
 	test_set, test_labels = make_test_set(training_examples,training_labels)
 	test_score = model.score(test_set, test_labels)
+	get_true_false_positive_negative(model.predict(test_set),test_labels)
 	return model, test_score
-	# print('test score: ', model.score(test_set, test_labels))
 
 
 def get_true_false_positive_negative(y_pred, y):
@@ -390,14 +392,17 @@ def get_true_false_positive_negative(y_pred, y):
 		if prediction == y[idx]:
 			if prediction == 1:
 				TP += 1
-			elif prediction == -1:
+			elif prediction == 0:
 				TN += 1
 		else:
 			if prediction == 1:
 				FP +=1
-			elif prediction == -1:
+			elif prediction == 0:
 				FN +=1
-	return TP, TN, FP, FN, '-' if (TP+FP) == 0 else TP/(TP+FP), '-' if (TP+FN) == 0 else TP/(TP+FN)
+	precision = '-' if (TP+FP) == 0 else TP/(TP+FP)
+	recall = '-' if (TP+FN) == 0 else TP/(TP+FN)
+	print('TP, TN, FP, FN: ', TP, TN, FP, FN,'precision:', precision, 'recall', recall)
+	return TP, TN, FP, FN, precision, recall
 
 # def test_svm_model(kernel, training_examples, training_labels, dev_set, dev_labels, test_set, test_labels, gamma='auto'):
 #     print('Kernel:', kernel, ',gamma:', gamma)
@@ -414,21 +419,25 @@ def get_true_false_positive_negative(y_pred, y):
 #     return model
 
 
-
-if sys.argv[1] == 'ma_parsegds':
+parser = argparse.ArgumentParser()
+parser.add_argument('--bags',default=1,type=int)
+parser.add_argument('--startID',default=0,type=int)
+options, action = parser.parse_known_args()
+action = action[0]
+if action == 'ma_parsegds':
 	GDSFiles_to_Dict()
-elif sys.argv[1] == 'oldids':
+elif action == 'oldids':
 	FixOutOfDataGoIds()
-elif sys.argv[1] == 'godict':
+elif action == 'godict':
 	MakeGeneAndGoDicts()
-elif sys.argv[1] == 'go_makearr':
+elif action == 'go_makearr':
 	ConstructGoAnnotationArray()
-elif sys.argv[1] == 'ma_makearr':
+elif action == 'ma_makearr':
 	ConstructMicroarrayArray()
-elif sys.argv[1] == 'pair_makearr':
+elif action == 'pair_makearr':
 	ConstructPairwiseArray()
-elif sys.argv[1] == 'runsvm':
-	DefaultParametersFullData()
+elif action == 'runsvm':
+	DefaultParametersFullData(n_estimators=options.bags,startID=options.startID)
 else: print("missing required arguments")
 
 
