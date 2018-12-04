@@ -321,78 +321,84 @@ def GetKMaxLabels(k=1):
 def LoadCombinedData():
 	pairwise_data = np.loadtxt(PAIR_DATA_FILE)
 	ma_data = np.loadtxt(MA_NONNULL_DATA)
-	# pdb.set_trace()
 	data = np.concatenate((pairwise_data,ma_data),axis=1)
 	label_data = np.loadtxt(GO_LABEL_ARR_FILE)
-	# assert(data.shape[0]==label_data.shape[0])
+	assert(data.shape[0]==label_data.shape[0])
 	go_dict = pickle.load(open(GO_DICT_FILE,'rb'))
 	genes_dict = pickle.load(open(GENES_DICT_FILE,'rb'))
-	return pairwise_data, label_data, {v: k for k, v in go_dict.items()}, {v: k for k, v in genes_dict.items()}
+	return data, label_data, {v: k for k, v in go_dict.items()}, {v: k for k, v in genes_dict.items()}
 
 def _modelfnames(model_name='defaultparams'):
 	timestring = time.strftime("%m-%d-%H.%M")
 	scores_file = RESULTS_DIR+model_name+'_'+timestring+'_scores.txt'
-	models_file = RESULTS_DIR+model_name+'_'+timestring+'_models.p'
+	models_file = RESULTS_DIR+model_name+'_'+timestring+'_model_'
 	return scores_file, models_file
 
-def DefaultParametersFullData(kernel='linear',C=1.0,gamma='scale'):
-    print('-----Running SVM on all GO IDs-----')   
-    training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
-    models_dict = {}
+def _modelDir(model_name='lineardefault'):
+	timestring = time.strftime("%m-%d-%H.%M")
+	dirname = RESULTS_DIR+model_name+'_'+timestring
+	os.mkdir(dirname)
+	return dirname
 
-    scores_file, models_file = _modelfnames('defaultparams')
-    open(scores_file,'w+').write("GOID\tscore\tkernel\tC\tgamma\n")
-    for i in range(training_labels.shape[1]):
-    	goid = go_inv_dict[i]
-    	# geneid = genes_inv_dict
-    	model_training_data = training_data[np.where(training_labels[:,i]!=-1)]
-    	pdb.set_trace()
-    	model_training_labels = training_labels[np.where(training_labels[:,i]!=-1)][:,i]
-    	model, score = test_svm_model(kernel,model_training_data,model_training_labels,C,gamma)
-    	models_dict[goid] = model
-    	open(scores_file,'a').write(goid+'\t'+score+'\t'+kernel+'\t'+gamma+'\n')
-    	print(str(i+1)+'/'+str(training_labels.shape[1]+' ID:'+goid+' acc: '+str(score)))
-    	break
-    np.savetxt(models_file,models_dict)
+def DefaultParametersFullData(kernel='linear',C=1.0,gamma='scale'):
+	print('-----Running SVM on all GO IDs-----')   
+	training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
+	models_dict = {}
+
+	# scores_file, models_file = _modelfnames('defaultparams')
+	model_dir = _modelDir()
+	scores_file = os.path.join(model_dir,'scores.txt')
+	open(scores_file,'w+').write("GOID\tscore\tkernel\tC\tgamma\n")
+	for i in range(training_labels.shape[1]):
+		goid = go_inv_dict[i]
+		# geneid = genes_inv_dict
+		model_training_data = training_data[np.where(training_labels[:,i]!=-1)]
+		model_training_labels = training_labels[np.where(training_labels[:,i]!=-1)][:,i]
+		model, score = test_svm_model(kernel,model_training_data,model_training_labels,C,gamma)
+		models_dict[goid] = model
+		open(scores_file,'a').write(goid+'\t'+str(score)+'\t'+str(kernel)+'\t'+str(gamma)+'\n')
+		print(str(i+1)+'/'+str(training_labels.shape[1])+' ID:'+goid+' acc: '+str(score))
+		pickle.dump(model,open(os.path.join(model_dir,'model-'+goid.split(':')[1]+'.p'),'wb'))
+	pickle.dump(models_dict,open(os.path.join(model_dir,'all_models.p'),'wb'))
 
 
 def make_test_set(training_examples,training_labels):
-    num_test_samples = int(training_examples.shape[0]*0.632)
-    test_idxs = RAND_STATE.random.choice(range(0,training_examples.shape[0]),size=num_test_samples,replace=True)
-    test_set = np.zeros(shape=(num_test_samples,training_examples.shape[1]))
-    test_labels = np.zeros(shape=(num_test_samples,training_labels.shape[1]))
-    for i in range(0,num_test_samples):
-    	test_set[i] = training_examples[test_idxs[i]]
-    	test_labels[i] = training_labels[test_idxs[i]]
-    return test_set, test_labels
+	num_test_samples = int(training_examples.shape[0]*0.632)
+	test_idxs = RAND_STATE.choice(range(0,training_examples.shape[0]),size=num_test_samples,replace=True)
+	test_set = np.zeros(shape=(num_test_samples,training_examples.shape[1]))
+	test_labels = np.zeros(shape=(num_test_samples,1))
+	for i in range(0,num_test_samples):
+		test_set[i] = training_examples[test_idxs[i]]
+		test_labels[i] = training_labels[test_idxs[i]]
+	return test_set, test_labels
 
 def test_svm_model(kernel, training_examples, training_labels, C=1.0, gamma='scale'):
-    # print('Kernel:', kernel, ',gamma:', gamma)
-    model = ensemble.BaggingClassifier(svm.SVC(kernel=kernel, gamma=gamma, random_state=RAND_SEED), max_samples=0.632)
-    model.fit(training_examples, training_labels)
-    test_set, test_labels = make_test_set(training_examples,training_labels)
-    test_score = model.score(test_set, test_labels)
-    return model, test_score
-    # print('test score: ', model.score(test_set, test_labels))
+	# print('Kernel:', kernel, ',gamma:', gamma)
+	model = ensemble.BaggingClassifier(svm.SVC(kernel=kernel, gamma=gamma, random_state=RAND_SEED), n_estimators=1,max_samples=0.632)
+	model.fit(training_examples, training_labels)
+	test_set, test_labels = make_test_set(training_examples,training_labels)
+	test_score = model.score(test_set, test_labels)
+	return model, test_score
+	# print('test score: ', model.score(test_set, test_labels))
 
 
 def get_true_false_positive_negative(y_pred, y):
-    TP, FP, TN, FN = 0, 0, 0, 0
-    if len(y_pred) != len(y):
-        print('WARNING: y_pred and y are of different length:', len(y), len(y_pred))
-        return 0, 0, 0, 0
-    for idx, prediction in enumerate(y_pred):
-        if prediction == y[idx]:
-            if prediction == 1:
-                TP += 1
-            elif prediction == -1:
-                TN += 1
-        else:
-            if prediction == 1:
-                FP +=1
-            elif prediction == -1:
-                FN +=1
-    return TP, TN, FP, FN, '-' if (TP+FP) == 0 else TP/(TP+FP), '-' if (TP+FN) == 0 else TP/(TP+FN)
+	TP, FP, TN, FN = 0, 0, 0, 0
+	if len(y_pred) != len(y):
+		print('WARNING: y_pred and y are of different length:', len(y), len(y_pred))
+		return 0, 0, 0, 0
+	for idx, prediction in enumerate(y_pred):
+		if prediction == y[idx]:
+			if prediction == 1:
+				TP += 1
+			elif prediction == -1:
+				TN += 1
+		else:
+			if prediction == 1:
+				FP +=1
+			elif prediction == -1:
+				FN +=1
+	return TP, TN, FP, FN, '-' if (TP+FP) == 0 else TP/(TP+FP), '-' if (TP+FN) == 0 else TP/(TP+FN)
 
 # def test_svm_model(kernel, training_examples, training_labels, dev_set, dev_labels, test_set, test_labels, gamma='auto'):
 #     print('Kernel:', kernel, ',gamma:', gamma)
