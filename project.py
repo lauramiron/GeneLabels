@@ -340,7 +340,7 @@ def _modelDir(model_name='lineardefault'):
 	os.mkdir(dirname)
 	return dirname
 
-def DefaultParametersFullData(kernel='linear',C=1.0,gamma='scale'):
+def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto'):
 	print('-----Running SVM on all GO IDs-----')   
 	training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
 	models_dict = {}
@@ -351,7 +351,6 @@ def DefaultParametersFullData(kernel='linear',C=1.0,gamma='scale'):
 	open(scores_file,'w+').write("GOID\tscore\tkernel\tC\tgamma\n")
 	for i in range(training_labels.shape[1]):
 		goid = go_inv_dict[i]
-		# geneid = genes_inv_dict
 		model_training_data = training_data[np.where(training_labels[:,i]!=-1)]
 		model_training_labels = training_labels[np.where(training_labels[:,i]!=-1)][:,i]
 		model, score = test_svm_model(kernel,model_training_data,model_training_labels,C,gamma)
