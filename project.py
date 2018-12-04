@@ -5,22 +5,30 @@ from sklearn.neighbors import NearestNeighbors
 import networkx
 import obonet
 import subprocess
+import time
 
-UNIGENE_LIST_FILE = 'unigene_list.txt'
+DATA_DIR =r'data/'
+OUTPUT_DIR=r'output/'
+RESULTS_DIR=r'results/'
 MICROARRAY_SERIES = ['GSM992', 'GSM1000', 'GSM993', 'GSM994', 'GSM995', 'GSM996', 'GSM998', 'GSM1004', 'GSM1005', 'GSM1006', 'GSM1008', 'GSM1012', 'GSM1015', 'GSM1007', 'GSM1009', 'GSM1013', 'GSM1014', 'GSM1105', 'GSM1100', 'GSM1101', 'GSM1104', 'GSM895', 'GSM1106', 'GSM1107', 'GSM1102', 'GSM1103', 'GSM1111', 'GSM899', 'GSM1041', 'GSM1047', 'GSM1042', 'GSM1043', 'GSM1044', 'GSM1045', 'GSM1046', 'GSM1055', 'GSM1029', 'GSM1030', 'GSM1032', 'GSM1033', 'GSM1034', 'GSM1048', 'GSM1049', 'GSM1050', 'GSM1051', 'GSM1052', 'GSM1053', 'GSM1054', 'GSM1075', 'GSM1076', 'GSM1090', 'GSM1077', 'GSM1078', 'GSM883', 'GSM930', 'GSM929', 'GSM928', 'GSM926', 'GSM925', 'GSM854', 'GSM855', 'GSM856', 'GSM857', 'GSM864', 'GSM865', 'GSM868', 'GSM872', 'GSM1002', 'GSM1003', 'GSM842', 'GSM843', 'GSM844', 'GSM845', 'GSM846', 'GSM847', 'GSM848', 'GSM849', 'GSM850', 'GSM851', 'GSM880', 'GSM881', 'GSM882', 'GSM874', 'GSM875', 'GSM876', 'GSM877', 'GSM878', 'GSM879', 'GSM972', 'GSM1039', 'GSM1040', 'GSM1037', 'GSM938', 'GSM939', 'GSM907', 'GSM990', 'GSM991', 'GSM997', 'GSM999', 'GSM1001', 'GSM971', 'GSM1057', 'GSM1058', 'GSM1059', 'GSM1060', 'GSM1061', 'GSM1063', 'GSM1064', 'GSM961', 'GSM962', 'GSM963', 'GSM964', 'GSM965', 'GSM966', 'GSM967', 'GSM968', 'GSM1019', 'GSM1020', 'GSM1021', 'GSM1022', 'GSM1023', 'GSM934', 'GSM935', 'GSM936', 'GSM1025', 'GSM937', 'GSM1024', 'GSM918', 'GSM919', 'GSM932', 'GSM933', 'GSM980', 'GSM863', 'GSM921', 'GSM920', 'GSM988', 'GSM922', 'GSM989', 'GSM858', 'GSM902', 'GSM931', 'GSM861', 'GSM862', 'GSM923', 'GSM860', 'GSM924', 'GSM859', 'GSM940', 'GSM942', 'GSM910', 'GSM969', 'GSM970', 'GSM973', 'GSM974', 'GSM975', 'GSM976', 'GSM984', 'GSM977', 'GSM903', 'GSM906', 'GSM985']
-# GO_NODES = open('go_nodes_list.txt').readlines()
-GO_NODES_LIST_FILE = 'go_nodes_list.txt'
-GENES_LIST_FILE = 'final_genes_list.txt'
-# MA_GENES_LIST_FILE = 'microarray_genes_list.txt'
-GO_DICT_FILE = 'go_dict.p'
-GENES_DICT_FILE = 'genes_dict.p'
-GO_ANNOTATION_FILE = 'uniprot-GO-annotations.txt'
-GO_GENES_LIST_FILE = 'go_genes_list.txt'
-GO_LABEL_ARR_FILE = 'go_label_arr.np'
-MA_RAW_DICT_FILE = 'microarray_raw_dict.p'
-PAIR_DICT_FILE ='matrix_index.txt'
-MA_DICT_FILE = 'microarray_dict.p'
+GO_NODES_LIST_FILE = DATA_DIR+'go_nodes_list.txt'
+GO_LIST_FORMATTED = OUTPUT_DIR+'go_nodes_formatted.txt'
+GO_DICT_FILE = OUTPUT_DIR+'go_dict.p'
+GENES_DICT_FILE = OUTPUT_DIR+'genes_dict.p'
+GO_ANNOTATION_FILE = DATA_DIR+'uniprot-GO-annotations.txt'
+GO_GENES_LIST_FILE = OUTPUT_DIR+'go_genes_list.txt'
+GO_LABEL_ARR_FILE = OUTPUT_DIR+'go_label_arr.np'
+MA_RAW_DICT_FILE = OUTPUT_DIR+'microarray_raw_dict.p'
+PAIR_FULL_DICT_FILE =DATA_DIR+'matrix_index.txt'
+PAIR_FULL_DATA_FILE = DATA_DIR+'interaction_matrix.np'
+MA_DICT_FILE = OUTPUT_DIR+'microarray_dict.p'
+MA_WNULLS_DATA = OUTPUT_DIR+'microarray_with_nulls.np'
+MA_NONNULL_DATA = OUTPUT_DIR+'microarray_nonnull.np'
+OBODB_FILE = DATA_DIR+'go-basic.obo'
+ALT_IDS_DICT_FILE = OUTPUT_DIR+'alt_ids_dict.p'
+PAIR_DATA_FILE = OUTPUT_DIR+'pairwise_filtered_data.np'
 
+# GENES_LIST_FILE = 'final_genes_list.txt'
 # GENES_LIST = open(GENES_FILE).readlines()
 
 def parse_microarray(filename,data_dict={},num_processed=0):
@@ -98,7 +106,7 @@ def ConstructMicroarrayArray(example_key='851262'):
 	for i in range(num_features):
 		features_to_index[example_features[i]] = i
 	pickle.dump(features_to_index,open(MA_DICT_FILE,'wb'))
-	print("Writing MA index dict to ")
+	print("Writing MA index dict to "+str(MA_DICT_FILE))
 
 	genes_dict = pickle.load(open(GENES_DICT_FILE,'rb'))
 	num_genes = len(genes_dict.keys())
@@ -118,12 +126,13 @@ def ConstructMicroarrayArray(example_key='851262'):
 				else:
 					data_arr[m,feature_index] = np.average(np.array(non_null_values).astype(np.float))
 			m+= 1
-	np.savetxt('microarray_with_nulls.np',data_arr)
+	np.savetxt(MA_WNULLS_DATA,data_arr)
 	print("Removing nulls with Knn")
 	RunKnnOnNulls()
 
 def RunKnnOnNulls():
-	data_arr = np.loadtxt('microarray_with_nulls.txt')
+	print("Running K nearest neighbors...")
+	data_arr = np.loadtxt(MA_WNULLS_DATA)
 	m,f = data_arr.shape
 	null_axes = np.isnan(data_arr).any(axis=1)
 	feature_averages = np.nanmean(data_arr,axis=0)
@@ -144,7 +153,7 @@ def RunKnnOnNulls():
 	# iterate through training examples and replace null values with
 	# value from that feature of nearest centroid
 	for i in np.where(null_axes==True)[0]:
-		print(i)
+		if i%1000 == 0: print("completed "+str(i)+" iterations")
 		example = np.copy(data_arr[i])
 		nan_indices = []
 		for j in range(f):
@@ -157,13 +166,13 @@ def RunKnnOnNulls():
 			distances, indices = models[j].kneighbors(example.reshape(1,-1))
 			centroid = np.average(data_arr[indices.flatten()],axis=0,weights=(1/distances.flatten()))
 			data_arr[i,j] = centroid[j]
-	np.savetxt('microarray_nonnull.txt')
+	np.savetxt(MA_NONNULL_DATA,data_arr)
 
 def MakeGeneAndGoDicts():
 	# make dict of index-to-GOTerm, using set 105 terms
 	go_dict = {}
-	with open(GO_NODES_LIST_FILE,'r') as f:
-		lines = f.readlines()
+	with open(GO_LIST_FORMATTED,'r') as f:
+		lines = [l.strip() for l in f.readlines()]
 		for i in range(len(lines)):
 			go_dict[lines[i]] = i
 	pickle.dump(go_dict,open(GO_DICT_FILE, "wb"))
@@ -171,10 +180,9 @@ def MakeGeneAndGoDicts():
 	# make dict of index-to-GeneId, using intersection of GO annotations, pairwise data, and microarray data
 	genes_dict = {}
 	MA_genes = set(pickle.load(open(MA_RAW_DICT_FILE,'rb')).keys())
-	PAIR_genes = set(pickle.load(open(PAIR_DICT_FILE,'rb')).keys())
+	PAIR_genes = set(pickle.load(open(PAIR_FULL_DICT_FILE,'rb')).keys())
 	os.system("cat "+GO_ANNOTATION_FILE+"| tail -n+2 | awk '{{ print $1 }}' > "+GO_GENES_LIST_FILE)
 	GO_genes = set([line.strip() for line in open(GO_GENES_LIST_FILE,'r').readlines()])
-	pdb.set_trace()
 	i = 0
 	for gene in MA_genes:
 		if (gene in GO_genes) and (gene in PAIR_genes):
@@ -184,16 +192,66 @@ def MakeGeneAndGoDicts():
 	print("MA_genes: "+str(len(MA_genes))+", GO_genes:"+str(len(GO_genes))+", PAIR_genes:"+str(len(PAIR_genes)))
 	print("Found "+str(len(genes_dict.keys()))+" intersecting genes across all sets")
 
+def FixOutOfDataGoIds():
+	# reformat hardcoded list of curated GO ids
+	lines = open(GO_NODES_LIST_FILE,'r').readlines()
+	with open(GO_LIST_FORMATTED,'w') as of:
+		for l in lines:
+			line = l.strip()
+			oline = 'GO:0000000'[0:-len(line)]+line
+			of.write(oline+'\n')
+
+	# make dictionary mapping old ids to new ids
+	obo_graph = obonet.read_obo(OBODB_FILE)
+	alt_ids_dic = {}
+	all_nodes = []
+	for idx, node in obo_graph.nodes(data=True):
+		all_nodes.append(idx)
+		if 'alt_id' in node:
+			if type(node['alt_id']) == list:
+				for alt_id in node['alt_id']:
+					alt_ids_dic[alt_id] = idx
+			else:
+				alt_ids_dic[node['alt_id']] = idx
+	pickle.dump(alt_ids_dic,open(ALT_IDS_DICT_FILE,'wb'))
+
+	updated=0
+	retired=0
+	print("Updating curated GO Nodes list ids....")
+	lines = [line.strip() for line in open(GO_LIST_FORMATTED,'r').readlines()]
+	newlines = []			# check for created duplicates
+	with open(GO_LIST_FORMATTED,'w') as f:
+		for l in lines:
+			line = l.strip()
+			if line not in all_nodes:
+				if line in alt_ids_dic:
+					newid = alt_ids_dic[line]
+					print(line+" ------> "+newid)
+					updated+=1
+					if newid not in newlines:
+						f.write(newid+'\n')
+						newlines.append(newid)
+				else:
+					print("Retired: "+line)
+					retired += 1
+			else:
+				if line not in newlines:
+					f.write(line+'\n')
+					newlines.append(line)
+	kept=len(lines)-updated-retired
+	print("Out of "+str(len(lines))+" GO nodes in Hierarchical paper, "+str(kept)+" are kept, "+str(updated)+" are updated, and "+str(retired)+" are retired, leaving "+str(len(newlines))+" after removing duplicates")
+
 
 def ConstructGoAnnotationArray():
-	# genes_list = open(GENES_LIST_FILE,'r'),readlines()
-	# go_nodes = open(GO_NODES_LIST_FILE,'r').readlines()
 	genes_dict = pickle.load(open(GENES_DICT_FILE,'rb'))
 	go_dict = pickle.load(open(GO_DICT_FILE,'rb'))
+	inv_go_dict = {v: k for k, v in go_dict.items()}
 	m = len(genes_dict.keys())
 	f = len(go_dict.keys())
-	go_labels = np.zeros(shape=(m,f))
-	
+
+	# -1 indicates negative example, 0 is neither positive nor negative
+	alt_ids_dic = pickle.load(open(ALT_IDS_DICT_FILE,'rb'))
+	go_labels = np.zeros((m,f))	
 	lines = open(GO_ANNOTATION_FILE,'r').readlines()
 	for x in range(1,len(lines)):
 		line = lines[x]
@@ -201,47 +259,156 @@ def ConstructGoAnnotationArray():
 		geneids = values[0].split(',')
 		for geneid in geneids:
 			if geneid in genes_dict.keys():
-				goids = [v.strip('GO:').strip(';') for v in values[2].split(' ')]
+				goids = [v.strip(';') for v in values[2].split(' ')]
 				gene_idx = genes_dict[geneid]
 				for go_id in goids:
-					if go_id in go_dict:
-						go_idx = go_dict[go_id]
+					new_id = go_id if go_id not in alt_ids_dic else alt_ids_dic[go_id]
+					if new_id in go_dict:
+						go_idx = go_dict[new_id]
 						go_labels[gene_idx,go_idx] = 1
+
+	# mark parents as non-negative examples of all children
+	obo_graph = obonet.read_obo(OBODB_FILE)
+	for i in range(m):
+		pos_idxs = np.argwhere(go_labels[i]==1).flatten()
+		for j in pos_idxs:
+			goid = inv_go_dict[j]
+			children = networkx.ancestors(obo_graph,goid)
+			for child in children:
+				if child in go_dict:
+					child_idx = go_dict[child]
+					if go_labels[i,child_idx] == 0:
+						go_labels[i,child_idx] = -1      # mark as non-negative example
+			parents = networkx.descendants(obo_graph,goid)
+			for parent in parents:			
+				if parent in go_dict:
+					parent_idx = go_dict[parent]
+					go_labels[i,parent_idx] = 1
+
 	np.savetxt(GO_LABEL_ARR_FILE,go_labels)
 	print("Constructed go annotation array with "+str(m)+" examples and "+str(f)+" annotations")
 
-def CombineWithPairwiseData():
-	my_genes_list = [line.strip() for line in open(GENES_LIST_FILE).readlines()]
-	ben_genes_dict = pickle.load(open('matrix_index.txt','rb'))
-	# pdb.set_trace()
-	for gene in my_genes_list:
-		if gene not in ben_genes_dict.keys():
-			print(gene)
-	print("only pairwise:")
-	for gene in ben_genes_dict.keys():
-		if gene not in my_genes_list:
-			print(gene)
+def ConstructPairwiseArray():
+	full_pairwise_data = np.loadtxt(PAIR_FULL_DATA_FILE)
+	full_pairwise_dict = pickle.load(open(PAIR_FULL_DICT_FILE,'rb'))
+	common_genes_dict = pickle.load(open(GENES_DICT_FILE,'rb'))
+	num_genes = len(common_genes_dict.keys())
+	f = full_pairwise_data.shape[1]
+	
+	pairwise_data = np.zeros(shape=(num_genes,f))
+	for geneid,idx in common_genes_dict.items():
+		pairwise_data[idx] = full_pairwise_data[full_pairwise_dict[geneid]]
+	np.savetxt(PAIR_DATA_FILE,pairwise_data)
 
-def quote(s):
-    return "'" + s.replace("'", "'\\''") + "'"
+def GetKMaxLabels(k=1):
+	# go_dict = pickle.load(open(GO_DICT_FILE,'rb'))
+	go_data = np.load(GO_LABEL_ARR_FILE)
+	# inv_go_dict = {v: k for k, v in go_dict.items()}
+	return -(go_data.sum(axis=1)).argsort()[:k]
+
+def LoadCombinedData():
+	pairwise_data = np.loadtxt(PAIR_FULL_DATA_FILE)
+	ma_data = np.loadtxt(MA_NONNULL_DATA)
+	data = np.concatenate(pairwise_data,ma_data)
+	label_data = np.loadtxt(GO_LABEL_ARR_FILE)
+	assert(data.shape[0]==label_data.shape[0])
+	go_dict = pickle.load(open(GO_DICT_FILE,'rb'))
+	genes_dict = pickle.load(open(GENES_DICT_FILE,'rb'))
+	return data, label_data, {v: k for k, v in go_dict.items()}, {v: k for k, v in genes_dict.items()}
+
+def _modelfnames(model_name='defaultparams'):
+	timestring = time.strftime("%m-%d-%H.%M")
+	scores_file = RESULTS_DIR+model_name+'_'+timestring+'_scores.txt'
+	models_file = RESULTS_DIR+model_name+'_'+timestring+'_models.p'
+	return scores_file, models_file
+
+def DefaultParametersFullData(kernel='linear',C=1.0,gamma='scale'):
+    print('-----Running SVM on all GO IDs-----')   
+    training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
+    models_dict = {}
+
+    scores_file, models_file = _modelfnames('defaultparams')
+    open(scores_file,'w').write("GOID\tscore\tkernel\tC\tgamma\n")
+    for i in range(training_labels.shape[1]):
+    	goid = go_inv_dict[i]
+    	# geneid = genes_inv_dict
+    	model_training_data = training_data[np.where(training_labels[:,i]!=-1)]
+    	model_training_labels = training_labels[np.where(training_labels[:,i]!=-1)]
+    	model, score = test_svm_model(kernel,model_training_data,model_training_labels,C,gamma)
+    	models_dict[goid] = model
+    	open(scores_file,'a').write(goid+'\t'+score+'\t'+kernel+'\t'+gamma+'\n')
+    	print(str(i+1)+'/'+str(training_labels.shape[1]+' ID:'+goid+' acc: '+str(score))
+    np.savetxt(models_file,models_dict)
+
+
+def make_test_set(training_examples,training_labels):
+    num_test_samples = int(training_examples.shape[0]*0.632)
+    test_idxs = np.random.choice(range(0,training_examples.shape[0]),size=num_test_samples,replace=True)
+    test_set = np.zeros(shape=(num_test_samples,training_examples.shape[1]))
+    test_labels = np.zeros(shape=(num_test_samples,training_labels.shape[1]))
+    for i in range(0,num_test_samples):
+    	test_set[i] = training_examples[test_idxs[i]]
+    	test_labels[i] = training_labels[test_idxs[i]]
+    return test_set, test_labels
+
+def test_svm_model(kernel, training_examples, training_labels, C=1.0, gamma='scale'):
+    # print('Kernel:', kernel, ',gamma:', gamma)
+    model = ensemble.BaggingClassifier(svm.SVC(kernel=kernel, gamma=gamma, random_state=0), max_samples=0.632)
+    model.fit(training_examples, training_labels)
+    test_set, test_labels = make_test_set()
+    test_score = model.score(test_set, test_labels)
+    return model, test_score
+    # print('test score: ', model.score(test_set, test_labels))
+
+
+def get_true_false_positive_negative(y_pred, y):
+    TP, FP, TN, FN = 0, 0, 0, 0
+    if len(y_pred) != len(y):
+        print('WARNING: y_pred and y are of different length:', len(y), len(y_pred))
+        return 0, 0, 0, 0
+    for idx, prediction in enumerate(y_pred):
+        if prediction == y[idx]:
+            if prediction == 1:
+                TP += 1
+            elif prediction == -1:
+                TN += 1
+        else:
+            if prediction == 1:
+                FP +=1
+            elif prediction == -1:
+                FN +=1
+    return TP, TN, FP, FN, '-' if (TP+FP) == 0 else TP/(TP+FP), '-' if (TP+FN) == 0 else TP/(TP+FN)
+
+# def test_svm_model(kernel, training_examples, training_labels, dev_set, dev_labels, test_set, test_labels, gamma='auto'):
+#     print('Kernel:', kernel, ',gamma:', gamma)
+#     model = ensemble.BaggingClassifier(svm.SVC(kernel=kernel, gamma=gamma, random_state=0), max_samples=0.632)
+#     model.fit(training_examples, training_labels)
+#     print('dev score: ', model.score(dev_set, dev_labels))
+#     print('test score: ', model.score(test_set, test_labels))
+#     true_false_positive_negative = get_true_false_positive_negative(model.predict(dev_set), dev_labels)
+#     print('TP, TN, FP, FN, dev: ', true_false_positive_negative[:4],
+#           'precision:', true_false_positive_negative[4], 'recall', true_false_positive_negative[5])
+#     true_false_positive_negative = get_true_false_positive_negative(model.predict(test_set), test_labels)
+#     print('TP, TN, FP, FN, test: ', true_false_positive_negative[:4],
+#           'precision:', true_false_positive_negative[4], 'recall', true_false_positive_negative[5])
+#     return model
 
 
 
 if sys.argv[1] == 'ma_parsegds':
 	GDSFiles_to_Dict()
-# elif sys.argv[1] == 'ma_filter':
-# 	DiscardMAGenesWithMissingFeatures()
+elif sys.argv[1] == 'oldids':
+	FixOutOfDataGoIds()
 elif sys.argv[1] == 'godict':
 	MakeGeneAndGoDicts()
 elif sys.argv[1] == 'go_makearr':
 	ConstructGoAnnotationArray()
 elif sys.argv[1] == 'ma_makearr':
 	ConstructMicroarrayArray()
-# elif sys.argv[1] == 'ma_knn':
-# 	RunKnnOnNulls()
-
-elif sys.argv[1] == 'combinepairwise':
-	CombineWithPairwiseData()
+elif sys.argv[1] == 'pair_makearr':
+	ConstructPairwiseArray()
+elif sys.argv[1] == 'runsvm':
+	DefaultParametersFullData()
 else: print("missing required arguments")
 
 
