@@ -357,6 +357,7 @@ def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto',n_estimators=1,
 		startID = len(glob.glob(model_dir,'model-*.p'))
 	else:
 		if os.path.isdir(model_dir): shutil.rmtree(model_dir)
+		os.mkdir(model_dir)
 		open(scores_file,'w+').write("GOID\tscore\tkernel\tC\tgamma\n")
 	
 	for i in range(startID,training_labels.shape[1]):
