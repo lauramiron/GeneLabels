@@ -1,4 +1,4 @@
-import pdb, glob, pickle, sys, os
+import pdb, glob, pickle, sys, os, shutil
 import numpy as np
 from sklearn import svm, ensemble
 from sklearn.neighbors import NearestNeighbors
@@ -448,7 +448,7 @@ elif action == 'ma_makearr':
 elif action == 'pair_makearr':
 	ConstructPairwiseArray()
 elif action == 'runsvm':
-	DefaultParametersFullData(n_estimators=options.bags,startID=options.startID,resume=(!options.restart))
+	DefaultParametersFullData(n_estimators=options.bags,startID=options.startID,resume=(~options.restart))
 else: print("missing required arguments")
 
 
