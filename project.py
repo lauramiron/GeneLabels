@@ -14,6 +14,7 @@ RAND_STATE=np.random.RandomState(seed=RAND_SEED)
 DATA_DIR =r'data/'
 OUTPUT_DIR=r'output/'
 RESULTS_DIR=r'results/'
+RUNNING_MODEL_DIR = RESULTS_DIR+'1-running_model'
 MICROARRAY_SERIES = ['GSM992', 'GSM1000', 'GSM993', 'GSM994', 'GSM995', 'GSM996', 'GSM998', 'GSM1004', 'GSM1005', 'GSM1006', 'GSM1008', 'GSM1012', 'GSM1015', 'GSM1007', 'GSM1009', 'GSM1013', 'GSM1014', 'GSM1105', 'GSM1100', 'GSM1101', 'GSM1104', 'GSM895', 'GSM1106', 'GSM1107', 'GSM1102', 'GSM1103', 'GSM1111', 'GSM899', 'GSM1041', 'GSM1047', 'GSM1042', 'GSM1043', 'GSM1044', 'GSM1045', 'GSM1046', 'GSM1055', 'GSM1029', 'GSM1030', 'GSM1032', 'GSM1033', 'GSM1034', 'GSM1048', 'GSM1049', 'GSM1050', 'GSM1051', 'GSM1052', 'GSM1053', 'GSM1054', 'GSM1075', 'GSM1076', 'GSM1090', 'GSM1077', 'GSM1078', 'GSM883', 'GSM930', 'GSM929', 'GSM928', 'GSM926', 'GSM925', 'GSM854', 'GSM855', 'GSM856', 'GSM857', 'GSM864', 'GSM865', 'GSM868', 'GSM872', 'GSM1002', 'GSM1003', 'GSM842', 'GSM843', 'GSM844', 'GSM845', 'GSM846', 'GSM847', 'GSM848', 'GSM849', 'GSM850', 'GSM851', 'GSM880', 'GSM881', 'GSM882', 'GSM874', 'GSM875', 'GSM876', 'GSM877', 'GSM878', 'GSM879', 'GSM972', 'GSM1039', 'GSM1040', 'GSM1037', 'GSM938', 'GSM939', 'GSM907', 'GSM990', 'GSM991', 'GSM997', 'GSM999', 'GSM1001', 'GSM971', 'GSM1057', 'GSM1058', 'GSM1059', 'GSM1060', 'GSM1061', 'GSM1063', 'GSM1064', 'GSM961', 'GSM962', 'GSM963', 'GSM964', 'GSM965', 'GSM966', 'GSM967', 'GSM968', 'GSM1019', 'GSM1020', 'GSM1021', 'GSM1022', 'GSM1023', 'GSM934', 'GSM935', 'GSM936', 'GSM1025', 'GSM937', 'GSM1024', 'GSM918', 'GSM919', 'GSM932', 'GSM933', 'GSM980', 'GSM863', 'GSM921', 'GSM920', 'GSM988', 'GSM922', 'GSM989', 'GSM858', 'GSM902', 'GSM931', 'GSM861', 'GSM862', 'GSM923', 'GSM860', 'GSM924', 'GSM859', 'GSM940', 'GSM942', 'GSM910', 'GSM969', 'GSM970', 'GSM973', 'GSM974', 'GSM975', 'GSM976', 'GSM984', 'GSM977', 'GSM903', 'GSM906', 'GSM985']
 GO_NODES_LIST_FILE = DATA_DIR+'go_nodes_list.txt'
 GO_LIST_FORMATTED = OUTPUT_DIR+'go_nodes_formatted.txt'
@@ -329,27 +330,35 @@ def LoadCombinedData():
 	genes_dict = pickle.load(open(GENES_DICT_FILE,'rb'))
 	return data, label_data, {v: k for k, v in go_dict.items()}, {v: k for k, v in genes_dict.items()}
 
-def _modelfnames(model_name='defaultparams'):
-	timestring = time.strftime("%m-%d-%H.%M")
-	scores_file = RESULTS_DIR+model_name+'_'+timestring+'_scores.txt'
-	models_file = RESULTS_DIR+model_name+'_'+timestring+'_model_'
-	return scores_file, models_file
+# def _modelfnames(model_name='defaultparams'):
+# 	timestring = time.strftime("%m-%d-%H.%M")
+# 	scores_file = RESULTS_DIR+model_name+'_'+timestring+'_scores.txt'
+# 	models_file = RESULTS_DIR+model_name+'_'+timestring+'_model_'
+# 	return scores_file, models_file
 
-def _modelDir(model_name='lineardefault'):
+# def _modelDir():
+# 	os.mkdir(RUNNING_MODEL_DIR)
+# 	return RUNNING_MODEL_DIR
+
+def _timeModelDir(model_name='lineardefault'):
 	timestring = time.strftime("%m-%d-%H.%M")
 	dirname = RESULTS_DIR+model_name+'_'+timestring
 	os.mkdir(dirname)
 	return dirname
 
-def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto',n_estimators=1,startID=0):
+def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto',n_estimators=1,resume=True,startID=0):
 	print('-----Running SVM on all GO IDs-----')   
 	training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
-	models_dict = {}
+	# models_dict = {}
 
-	# scores_file, models_file = _modelfnames('defaultparams')
-	model_dir = _modelDir()
+	model_dir = RUNNING_MODEL_DIR
 	scores_file = os.path.join(model_dir,'scores.txt')
-	open(scores_file,'w+').write("GOID\tscore\tkernel\tC\tgamma\n")
+	if (resume==True) and os.path.isdir(model_dir):
+		startID = len(glob.glob(model_dir,'model-*.p'))
+	else:
+		if os.path.isdir(model_dir): shutil.rmtree(model_dir)
+		open(scores_file,'w+').write("GOID\tscore\tkernel\tC\tgamma\n")
+	
 	for i in range(startID,training_labels.shape[1]):
 		goid = go_inv_dict[i]
 		model_training_data = training_data[np.where(training_labels[:,i]!=-1)]
@@ -357,11 +366,12 @@ def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto',n_estimators=1,
 		if not (model_training_labels==1).any(): model, score = None, -1
 		else:
 			model, score = test_svm_model(kernel,model_training_data,model_training_labels,C,gamma,n_estimators)
-		models_dict[goid] = model
+		# models_dict[goid] = model
 		open(scores_file,'a').write(goid+'\t'+str(score)+'\t'+str(kernel)+'\t'+str(gamma)+'\n')
 		print(str(i+1)+'/'+str(training_labels.shape[1])+' ID:'+goid+' acc: '+str(score))
 		pickle.dump(model,open(os.path.join(model_dir,'model-'+goid.split(':')[1]+'.p'),'wb'))
-	pickle.dump(models_dict,open(os.path.join(model_dir,'all_models.p'),'wb'))
+	# pickle.dump(models_dict,open(os.path.join(model_dir,'all_models.p'),'wb'))
+	os.rename(model_dir,_timeModelDir(model_name='lineardefault'))
 
 
 def make_test_set(training_examples,training_labels):
@@ -422,6 +432,7 @@ def get_true_false_positive_negative(y_pred, y):
 parser = argparse.ArgumentParser()
 parser.add_argument('--bags',default=1,type=int)
 parser.add_argument('--startID',default=0,type=int)
+parser.add_argument('--restart',action='store_true',default=False)
 options, action = parser.parse_known_args()
 action = action[0]
 if action == 'ma_parsegds':
@@ -437,7 +448,7 @@ elif action == 'ma_makearr':
 elif action == 'pair_makearr':
 	ConstructPairwiseArray()
 elif action == 'runsvm':
-	DefaultParametersFullData(n_estimators=options.bags,startID=options.startID)
+	DefaultParametersFullData(n_estimators=options.bags,startID=options.startID,resume=(!options.restart))
 else: print("missing required arguments")
 
 
