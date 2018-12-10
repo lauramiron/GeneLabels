@@ -496,6 +496,7 @@ def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*'):
 		model = models_dict[model_name]
 		if model == None:
 			print('NO DATA for ',model_name,', skipping...')
+			continue
 		validation_data, validation_labels = make_test_set(training_data,training_labels[:,go_dict[model_name]],rstate=RAND_STATE2)
 		validation_labels = validation_labels.flatten()
 		y_pred = model.predict(validation_data)
