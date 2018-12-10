@@ -20,6 +20,7 @@ OUTPUT_DIR=r'output/'
 RESULTS_DIR=r'results/'
 RUNNING_MODEL_DIR = RESULTS_DIR+'1-running_model'
 MODEL_CPDS_FILE = RUNNING_MODEL_DIR+'/model_cpds.p'
+MODEL_CPDS_DIR = RUNNING_MODEL_DIR+'/model_cpds'
 TRUE_LABEL_CPDS_FILE = RUNNING_MODEL_DIR+'/true_label_cpds.p'
 MICROARRAY_SERIES = ['GSM992', 'GSM1000', 'GSM993', 'GSM994', 'GSM995', 'GSM996', 'GSM998', 'GSM1004', 'GSM1005', 'GSM1006', 'GSM1008', 'GSM1012', 'GSM1015', 'GSM1007', 'GSM1009', 'GSM1013', 'GSM1014', 'GSM1105', 'GSM1100', 'GSM1101', 'GSM1104', 'GSM895', 'GSM1106', 'GSM1107', 'GSM1102', 'GSM1103', 'GSM1111', 'GSM899', 'GSM1041', 'GSM1047', 'GSM1042', 'GSM1043', 'GSM1044', 'GSM1045', 'GSM1046', 'GSM1055', 'GSM1029', 'GSM1030', 'GSM1032', 'GSM1033', 'GSM1034', 'GSM1048', 'GSM1049', 'GSM1050', 'GSM1051', 'GSM1052', 'GSM1053', 'GSM1054', 'GSM1075', 'GSM1076', 'GSM1090', 'GSM1077', 'GSM1078', 'GSM883', 'GSM930', 'GSM929', 'GSM928', 'GSM926', 'GSM925', 'GSM854', 'GSM855', 'GSM856', 'GSM857', 'GSM864', 'GSM865', 'GSM868', 'GSM872', 'GSM1002', 'GSM1003', 'GSM842', 'GSM843', 'GSM844', 'GSM845', 'GSM846', 'GSM847', 'GSM848', 'GSM849', 'GSM850', 'GSM851', 'GSM880', 'GSM881', 'GSM882', 'GSM874', 'GSM875', 'GSM876', 'GSM877', 'GSM878', 'GSM879', 'GSM972', 'GSM1039', 'GSM1040', 'GSM1037', 'GSM938', 'GSM939', 'GSM907', 'GSM990', 'GSM991', 'GSM997', 'GSM999', 'GSM1001', 'GSM971', 'GSM1057', 'GSM1058', 'GSM1059', 'GSM1060', 'GSM1061', 'GSM1063', 'GSM1064', 'GSM961', 'GSM962', 'GSM963', 'GSM964', 'GSM965', 'GSM966', 'GSM967', 'GSM968', 'GSM1019', 'GSM1020', 'GSM1021', 'GSM1022', 'GSM1023', 'GSM934', 'GSM935', 'GSM936', 'GSM1025', 'GSM937', 'GSM1024', 'GSM918', 'GSM919', 'GSM932', 'GSM933', 'GSM980', 'GSM863', 'GSM921', 'GSM920', 'GSM988', 'GSM922', 'GSM989', 'GSM858', 'GSM902', 'GSM931', 'GSM861', 'GSM862', 'GSM923', 'GSM860', 'GSM924', 'GSM859', 'GSM940', 'GSM942', 'GSM910', 'GSM969', 'GSM970', 'GSM973', 'GSM974', 'GSM975', 'GSM976', 'GSM984', 'GSM977', 'GSM903', 'GSM906', 'GSM985']
 GO_NODES_LIST_FILE = DATA_DIR+'go_nodes_list.txt'
@@ -450,7 +451,7 @@ def _load_models_dict():
 	models_file = model_dir+'/all_models.p'
 	print('Loading models from individual files')
 	models_dict = {}
-	for model_file in glob.glob(model_dir+'/model-*97.p'):
+	for model_file in glob.glob(model_dir+'/model-*.p'):
 		name = 'GO:'+model_file.split('/')[-1].split('-')[-1].split('.')[0]
 		model = pickle.load(open(model_file,'rb'))
 		models_dict[name] = model
@@ -494,23 +495,27 @@ def get_model_cpds(training_data,training_labels_negs,go_dict):
 		cpd = TabularCPD(model_name+'_hat',2,[[yhat0_y0,yhat0_y1],[yhat1_y0,yhat1_y1]],evidence=[model_name],evidence_card=[2])
 		cpd.normalize()
 		cpds.append(cpd)
+		pickle.dump(cpd,MODEL_CPDS_DIR+'/'+model_name.split(':')[1]+'.p')
 	pickle.dump(cpds,open(MODEL_CPDS_FILE,'wb'))
 	return cpds
 
 
-def get_true_label_cpds(training_labels_negs,inv_go_dict):
+def get_true_label_cpds(training_labels_negs,go_dict):
 	print('Calculating cpds for true label dependencies')
 	training_labels = np.copy(training_labels_negs)
-	training_labels[np.where(x==-1)] = 0	
-	labels_list = inv_go_dict.values()
+	training_labels[np.where(training_labels==-1)] = 0	
+	labels_list = go_dict.values()
 	cpds = []
+	i=1
+	obo_graph = obonet.read_obo(OBODB_FILE)
 	for label in labels_list:
+		print(i,'/',len(labels_list))
 		children = [c for c in networkx.ancestors(obo_graph,label) if c in labels_list]
 		data = np.zeros(shape=(2,2**len(children)))
 		data[1,:] = 1
-		goidx = inv_go_dict[label]
+		goidx = go_dict[label]
 		tlc = np.copy(training_labels)
-		cgidxs = [inv_go_dict[c] for c in children]
+		cgidxs = [go_dict[c] for c in children]
 		for gid in cgids:
 			np.delete(tlc,np.where(tlc[:,gid]==1))
 		data[1,0] = tlc.sum(axis=0)[goidx] / tlc.shape[0]
@@ -536,26 +541,24 @@ def make_bayes_net():
 
 	print('adding nodes and edges...')
 	G = BayesianModel()
-	G.add_nodes_from(labels_list)
-	G.add_nodes_from([label+'_hat' for label in labels_list])
+	# G.add_nodes_from(labels_list)
+	# G.add_nodes_from([label+'_hat' for label in labels_list])
 	G.add_edges_from([(label, label+'_hat') for label in labels_list])
 	obo_graph = obonet.read_obo(OBODB_FILE)
 	for label in labels_list:
-		children = networkx.ancestors(obo_graph,label)
+		children = [c for c in networkx.ancestors(obo_graph,label) if c in labels_list]
 		for child in children:
-			if child in labels_list:
-				G.add_edge(child,label)
-				# cpd = TabularCPD(label,2,[[1,0],[0,1]],evidence=[child],evidence_card=[2])
-				# G.add_cpds(cpd)
+			G.add_edge(child,label)
+			# cpd = TabularCPD(label,2,[[1,0],[0,1]],evidence=[child],evidence_card=[2])
+			# G.add_cpds(cpd)
 	
 	predicted_cpds = get_model_cpds(training_data,training_labels,go_dict)
 	for cpd in predicted_cpds:
 		G.add_cpds(cpd)
-	pdb.set_trace()
-	true_label_cpds = get_true_label_cpds(training_labels,inv_go_dict)
+	true_label_cpds = get_true_label_cpds(training_labels,go_dict)
 	for cpd in true_label_cpds:
 		G.add_cpds(cpd)
-	pdb.set_trace()
+	# pdb.set_trace()
 	return G
 
 	
