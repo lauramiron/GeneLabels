@@ -521,8 +521,8 @@ def get_true_label_cpds(training_labels_negs,go_dict):
 		if i % 10 == 0: print(i,'/',len(labels_list))
 		i+=1
 		children = [c for c in networkx.ancestors(obo_graph,label) if c in labels_list]
-		data = np.zeros(shape=(2,2**len(children)))
-		data[1,:] = 1
+		data = np.full(shape=(2,2**len(children)),fill_value=0.01)
+		data[1,:] = .99
 		goidx = go_dict[label]
 		tlc = np.copy(training_labels)
 		cgidxs = [go_dict[c] for c in children]
@@ -530,7 +530,6 @@ def get_true_label_cpds(training_labels_negs,go_dict):
 		delete_idxs = []
 		for gid in cgidxs:
 			delete_idxs += list(np.where(tlc[:,gid]==1)[0])
-			# np.delete(tlc,np.where(tlc[:,gid]==1))
 		tlc = np.delete(tlc,delete_idxs,axis=0)
 		data[1,0] = tlc.sum(axis=0)[goidx] / tlc.shape[0]
 		data[0,0] = 1 - data[1,0]
@@ -541,6 +540,7 @@ def get_true_label_cpds(training_labels_negs,go_dict):
 			evidence.append(child)
 			evidence_card.append(2)
 		cpd = TabularCPD(label,2,data,evidence=evidence,evidence_card=evidence_card)
+		cpd.normalize()
 		cpds.append(cpd)
 	pickle.dump(cpds,open(TRUE_LABEL_CPDS_FILE,'wb'))
 	return cpds
