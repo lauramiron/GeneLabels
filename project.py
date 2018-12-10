@@ -446,12 +446,12 @@ def _loads(file_path):
 	return data2
 
 
-def _load_models_dict():
+def _load_models_dict(hash='*'):
 	model_dir = RUNNING_MODEL_DIR
 	models_file = model_dir+'/all_models.p'
 	print('Loading models from individual files')
 	models_dict = {}
-	for model_file in glob.glob(model_dir+'/model-*.p'):
+	for model_file in glob.glob(model_dir+'/model-*'+str(hash)+'.p'):
 		name = 'GO:'+model_file.split('/')[-1].split('-')[-1].split('.')[0]
 		model = pickle.load(open(model_file,'rb'))
 		models_dict[name] = model
@@ -471,16 +471,21 @@ def _load_models_dict():
 	# 	models_dict = _loads(models_file)
 	return models_dict
 
-def get_model_cpds(training_data,training_labels_negs,go_dict):
+def get_model_cpds():
+	pass
+
+def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*'):
 	print('Getting cpds from svm predictions on test set')
 	# training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
 	training_labels = np.copy(training_labels_negs)
 	training_labels[np.where(training_labels==-1)] = 0
 	assert((training_labels!=-1).any())
-	models_dict = _load_models_dict()
+	models_dict = _load_models_dict(hash=hash)
 	cpds = []
 	i=1
 	num_models = len(models_dict.keys())
+	if not os.path.isdir(MODEL_CPDS_DIR):
+		os.mkdir(MODEL_CPDS_DIR)
 	for model_name in models_dict:
 		print(i,'/',num_models,' ',model_name)
 		i+=1
@@ -495,7 +500,7 @@ def get_model_cpds(training_data,training_labels_negs,go_dict):
 		cpd = TabularCPD(model_name+'_hat',2,[[yhat0_y0,yhat0_y1],[yhat1_y0,yhat1_y1]],evidence=[model_name],evidence_card=[2])
 		cpd.normalize()
 		cpds.append(cpd)
-		pickle.dump(cpd,MODEL_CPDS_DIR+'/'+model_name.split(':')[1]+'.p')
+		pickle.dump(cpd,open(MODEL_CPDS_DIR+'/'+model_name.split(':')[1]+'.p','wb'))
 	pickle.dump(cpds,open(MODEL_CPDS_FILE,'wb'))
 	return cpds
 
@@ -516,7 +521,7 @@ def get_true_label_cpds(training_labels_negs,go_dict):
 		goidx = go_dict[label]
 		tlc = np.copy(training_labels)
 		cgidxs = [go_dict[c] for c in children]
-		for gid in cgids:
+		for gid in cgidxs:
 			np.delete(tlc,np.where(tlc[:,gid]==1))
 		data[1,0] = tlc.sum(axis=0)[goidx] / tlc.shape[0]
 		data[0,0] = 1 - data[1,0]
@@ -558,9 +563,15 @@ def make_bayes_net():
 	true_label_cpds = get_true_label_cpds(training_labels,go_dict)
 	for cpd in true_label_cpds:
 		G.add_cpds(cpd)
-	# pdb.set_trace()
+	pickle.dump(G,open(RUNNING_MODEL_DIR+'/'+'graph.p'))
 	return G
 
+def MakeModelCpds(hash='*'):
+	print('-------- Making model cpds -------')
+	print('loading data...')
+	training_data, training_labels, inv_go_dict, inv_genes_dict = LoadCombinedData()
+	go_dict = {v: k for k, v in inv_go_dict.items()}
+	make_model_cpds(training_data,training_labels,go_dict,hash=hash)
 	
 def BayesNetPredict():
 	training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
@@ -575,6 +586,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--bags',default=1,type=int)
 parser.add_argument('--startID',default=0,type=int)
 parser.add_argument('--restart',action='store_true',default=False)
+parser.add_argument('--cpdhash',default='*')
 options, action = parser.parse_known_args()
 action = action[0]
 if action == 'ma_parsegds':
@@ -591,6 +603,8 @@ elif action == 'pair_makearr':
 	ConstructPairwiseArray()
 elif action == 'runsvm':
 	DefaultParametersFullData(n_estimators=options.bags,startID=options.startID,resume=(not options.restart))
+elif action == 'modelcpds':
+	MakeModelCpds(hash=options.cpdhash)
 elif action == 'runbayes':
 	BayesNetPredict()
 else: print("missing required arguments")
