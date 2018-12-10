@@ -474,6 +474,10 @@ def _load_models_dict(hash='*'):
 def get_model_cpds():
 	pass
 
+def safe_div(x,y):
+	if y==0: return 0
+	else: return x/y
+
 def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*'):
 	print('Getting cpds from svm predictions on test set')
 	# training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
@@ -489,14 +493,16 @@ def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*'):
 	for model_name in models_dict:
 		print(i,'/',num_models,' ',model_name)
 		i+=1
+		model = models_dict[model_name]
+		if model == None:
+			print('NO DATA for ',model_name,', skipping...')
 		validation_data, validation_labels = make_test_set(training_data,training_labels[:,go_dict[model_name]],rstate=RAND_STATE2)
 		validation_labels = validation_labels.flatten()
-		model = models_dict[model_name]
 		y_pred = model.predict(validation_data)
-		yhat0_y0 = (1-y_pred[validation_labels==0]).sum() / (1-validation_labels).sum()
-		yhat0_y1 = (1-y_pred[validation_labels==1]).sum() / validation_labels.sum()
-		yhat1_y0 = (y_pred[validation_labels==0]).sum() / (1-validation_labels).sum()
-		yhat1_y1 = (y_pred[validation_labels==1]).sum() / validation_labels.sum()
+		yhat0_y0 = safe_div((1-y_pred[validation_labels==0]).sum(),(1-validation_labels).sum())
+		yhat0_y1 = safe_div((1-y_pred[validation_labels==1]).sum(),validation_labels.sum())
+		yhat1_y0 = safe_div((y_pred[validation_labels==0]).sum(),(1-validation_labels).sum())
+		yhat1_y1 = safe_div((y_pred[validation_labels==1]).sum(),validation_labels.sum())
 		cpd = TabularCPD(model_name+'_hat',2,[[yhat0_y0,yhat0_y1],[yhat1_y0,yhat1_y1]],evidence=[model_name],evidence_card=[2])
 		cpd.normalize()
 		cpds.append(cpd)
