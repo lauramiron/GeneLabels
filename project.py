@@ -337,7 +337,7 @@ def load_label_data():
 	go_dict = pickle.load(open(GO_DICT_FILE,'rb'))
 	genes_dict = pickle.load(open(GENES_DICT_FILE,'rb'))
 	return label_data, go_dict, {v: k for k, v in go_dict.items()}, {v: k for k, v in genes_dict.items()}
-	
+
 
 def _timeModelDir(model_name='lineardefault'):
 	timestring = time.strftime("%m-%d-%H.%M")
@@ -501,7 +501,6 @@ def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*'):
 		yhat0_y1 = safe_div((1-y_pred[validation_labels==1]).sum(),validation_labels.sum())
 		yhat1_y0 = safe_div((y_pred[validation_labels==0]).sum(),(1-validation_labels).sum())
 		yhat1_y1 = safe_div((y_pred[validation_labels==1]).sum(),validation_labels.sum())
-		pdb.set_trace()
 		cpd = TabularCPD(model_name+'_hat',2,[[yhat0_y0,yhat0_y1],[yhat1_y0,yhat1_y1]],evidence=[model_name],evidence_card=[2])
 		cpd.normalize()
 		cpds.append(cpd)
@@ -533,7 +532,6 @@ def get_true_label_cpds(training_labels_negs,go_dict):
 			delete_idxs += list(np.where(tlc[:,gid]==1)[0])
 			# np.delete(tlc,np.where(tlc[:,gid]==1))
 		tlc = np.delete(tlc,delete_idxs,axis=0)
-		pdb.set_trace()
 		data[1,0] = tlc.sum(axis=0)[goidx] / tlc.shape[0]
 		data[0,0] = 1 - data[1,0]
 
@@ -548,7 +546,7 @@ def get_true_label_cpds(training_labels_negs,go_dict):
 	return cpds
 
 
-def make_bayes_net(load=True):
+def make_bayes_net(load=False):
 	print('Making bayes net')
 	graph_file = RUNNING_MODEL_DIR+'/'+'graph.p'
 	if os.path.isfile(graph_file) and load==True:
@@ -599,6 +597,7 @@ def BayesNetPredict():
 	nodes = model.nodes()
 	columns = []
 	remove_idxs = []
+	test_data = test_data.astype(int)
 	for i in range(len(go_inv_dict.keys())):
 		node_name = go_inv_dict[i]+'_hat'
 		if node_name not in nodes: remove_idxs.append(i)
