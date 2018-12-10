@@ -455,7 +455,7 @@ def _load_models_dict():
 		name = 'GO:'+model_file.split('/')[-1].split('-')[-1].split('.')[0]
 		model = pickle.load(open(model_file,'rb'))
 		models_dict[name] = model
-	_dumps(models_dict,models_file)	
+	# _dumps(models_dict,models_file)	
 	# if not os.path.isfile(models_file):
 	# 	print('Loading models from individual files')
 	# 	models_dict = {}
@@ -504,7 +504,7 @@ def get_true_label_cpds(training_labels_negs,go_dict):
 	print('Calculating cpds for true label dependencies')
 	training_labels = np.copy(training_labels_negs)
 	training_labels[np.where(training_labels==-1)] = 0	
-	labels_list = go_dict.values()
+	labels_list = go_dict.keys()
 	cpds = []
 	i=1
 	obo_graph = obonet.read_obo(OBODB_FILE)
