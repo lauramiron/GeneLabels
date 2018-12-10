@@ -11,6 +11,7 @@ import argparse
 from pgmpy.models import BayesianModel
 from pgmpy.factors.discrete.CPD import TabularCPD
 from numpy.random import RandomState
+import pandas as pd
 
 RAND_SEED=0
 RAND_STATE=np.random.RandomState(seed=RAND_SEED)
@@ -336,16 +337,7 @@ def load_label_data():
 	go_dict = pickle.load(open(GO_DICT_FILE,'rb'))
 	genes_dict = pickle.load(open(GENES_DICT_FILE,'rb'))
 	return label_data, go_dict, {v: k for k, v in go_dict.items()}, {v: k for k, v in genes_dict.items()}
-
-# def _modelfnames(model_name='defaultparams'):
-# 	timestring = time.strftime("%m-%d-%H.%M")
-# 	scores_file = RESULTS_DIR+model_name+'_'+timestring+'_scores.txt'
-# 	models_file = RESULTS_DIR+model_name+'_'+timestring+'_model_'
-# 	return scores_file, models_file
-
-# def _modelDir():
-# 	os.mkdir(RUNNING_MODEL_DIR)
-# 	return RUNNING_MODEL_DIR
+	
 
 def _timeModelDir(model_name='lineardefault'):
 	timestring = time.strftime("%m-%d-%H.%M")
@@ -387,7 +379,8 @@ def make_test_set(training_examples,training_labels,rstate=RAND_STATE):
 	num_test_samples = int(training_examples.shape[0]*0.632)
 	test_idxs = rstate.choice(range(0,training_examples.shape[0]),size=num_test_samples,replace=True)
 	test_set = np.zeros(shape=(num_test_samples,training_examples.shape[1]))
-	test_labels = np.zeros(shape=(num_test_samples,1))
+	label_shape = 1 if (len(training_labels.shape) < 2) else training_labels.shape[1]
+	test_labels = np.zeros(shape=(num_test_samples,label_shape))
 	for i in range(0,num_test_samples):
 		test_set[i] = training_examples[test_idxs[i]]
 		test_labels[i] = training_labels[test_idxs[i]]
@@ -472,15 +465,19 @@ def _load_models_dict(hash='*'):
 	return models_dict
 
 def get_model_cpds():
-	pass
+	cpds = []
+	for file_name in glob.glob(MODEL_CPDS_DIR+'/*'):
+		print(file_name)
+		cpd = pickle.load(open(file_name,'rb'))
+		cpds.append(cpd)
+	return cpds
 
 def safe_div(x,y):
-	if y==0: return 0
+	if y==0: return (x+1)/(y+2)
 	else: return x/y
 
 def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*'):
 	print('Getting cpds from svm predictions on test set')
-	# training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
 	training_labels = np.copy(training_labels_negs)
 	training_labels[np.where(training_labels==-1)] = 0
 	assert((training_labels!=-1).any())
@@ -504,6 +501,7 @@ def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*'):
 		yhat0_y1 = safe_div((1-y_pred[validation_labels==1]).sum(),validation_labels.sum())
 		yhat1_y0 = safe_div((y_pred[validation_labels==0]).sum(),(1-validation_labels).sum())
 		yhat1_y1 = safe_div((y_pred[validation_labels==1]).sum(),validation_labels.sum())
+		pdb.set_trace()
 		cpd = TabularCPD(model_name+'_hat',2,[[yhat0_y0,yhat0_y1],[yhat1_y0,yhat1_y1]],evidence=[model_name],evidence_card=[2])
 		cpd.normalize()
 		cpds.append(cpd)
@@ -521,15 +519,21 @@ def get_true_label_cpds(training_labels_negs,go_dict):
 	i=1
 	obo_graph = obonet.read_obo(OBODB_FILE)
 	for label in labels_list:
-		print(i,'/',len(labels_list))
+		if i % 10 == 0: print(i,'/',len(labels_list))
+		i+=1
 		children = [c for c in networkx.ancestors(obo_graph,label) if c in labels_list]
 		data = np.zeros(shape=(2,2**len(children)))
 		data[1,:] = 1
 		goidx = go_dict[label]
 		tlc = np.copy(training_labels)
 		cgidxs = [go_dict[c] for c in children]
+
+		delete_idxs = []
 		for gid in cgidxs:
-			np.delete(tlc,np.where(tlc[:,gid]==1))
+			delete_idxs += list(np.where(tlc[:,gid]==1)[0])
+			# np.delete(tlc,np.where(tlc[:,gid]==1))
+		tlc = np.delete(tlc,delete_idxs,axis=0)
+		pdb.set_trace()
 		data[1,0] = tlc.sum(axis=0)[goidx] / tlc.shape[0]
 		data[0,0] = 1 - data[1,0]
 
@@ -544,33 +548,41 @@ def get_true_label_cpds(training_labels_negs,go_dict):
 	return cpds
 
 
-def make_bayes_net():
+def make_bayes_net(load=True):
 	print('Making bayes net')
-	print('loading data...')
-	training_data, training_labels, inv_go_dict, inv_genes_dict = LoadCombinedData()
-	go_dict = {v: k for k, v in inv_go_dict.items()}
-	labels_list = go_dict.keys()
+	graph_file = RUNNING_MODEL_DIR+'/'+'graph.p'
+	if os.path.isfile(graph_file) and load==True:
+		print('Loading saved graph from file...')
+		G = pickle.load(open(graph_file,'rb'))
+		G.check_model()
+	else:
+		print('loading data...')
+		training_data, training_labels, inv_go_dict, inv_genes_dict = LoadCombinedData()
+		go_dict = {v: k for k, v in inv_go_dict.items()}
+		labels_list = go_dict.keys()
 
-	print('adding nodes and edges...')
-	G = BayesianModel()
-	# G.add_nodes_from(labels_list)
-	# G.add_nodes_from([label+'_hat' for label in labels_list])
-	G.add_edges_from([(label, label+'_hat') for label in labels_list])
-	obo_graph = obonet.read_obo(OBODB_FILE)
-	for label in labels_list:
-		children = [c for c in networkx.ancestors(obo_graph,label) if c in labels_list]
-		for child in children:
-			G.add_edge(child,label)
-			# cpd = TabularCPD(label,2,[[1,0],[0,1]],evidence=[child],evidence_card=[2])
-			# G.add_cpds(cpd)
-	
-	predicted_cpds = get_model_cpds(training_data,training_labels,go_dict)
-	for cpd in predicted_cpds:
-		G.add_cpds(cpd)
-	true_label_cpds = get_true_label_cpds(training_labels,go_dict)
-	for cpd in true_label_cpds:
-		G.add_cpds(cpd)
-	pickle.dump(G,open(RUNNING_MODEL_DIR+'/'+'graph.p'))
+		print('adding nodes and edges...')
+		G = BayesianModel()
+		G.add_edges_from([(label, label+'_hat') for label in labels_list])
+		obo_graph = obonet.read_obo(OBODB_FILE)
+		for label in labels_list:
+			children = [c for c in networkx.ancestors(obo_graph,label) if c in labels_list]
+			for child in children:
+				G.add_edge(child,label)
+		
+		predicted_cpds = get_model_cpds()
+		for cpd in predicted_cpds:
+			G.add_cpds(cpd)
+		true_label_cpds = get_true_label_cpds(training_labels,go_dict)
+		for cpd in true_label_cpds:
+			G.add_cpds(cpd)
+		remove_list = []
+		for node in G.nodes():
+			if G.get_cpds(node) == None: remove_list.append(node)
+		for node in remove_list:
+			G.remove_node(node)
+		G.check_model()
+		pickle.dump(G,open(graph_file,'wb'))
 	return G
 
 def MakeModelCpds(hash='*'):
@@ -584,8 +596,15 @@ def BayesNetPredict():
 	training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
 	model = make_bayes_net()
 	test_data, test_labels = make_test_set(training_data,training_labels,rstate=RandomState(seed=RAND_SEED+2))
-	columns = [go_inv_dict[i]+'_hat' for i in range(len(go_inv_dict.keys()))]
-	predict_data = pd.DataFrame(test_labels[0],columns=columns)
+	nodes = model.nodes()
+	columns = []
+	remove_idxs = []
+	for i in range(len(go_inv_dict.keys())):
+		node_name = go_inv_dict[i]+'_hat'
+		if node_name not in nodes: remove_idxs.append(i)
+		else: columns.append(node_name)
+	ftest_labels = np.delete(test_labels,remove_idxs,axis=1)
+	predict_data = pd.DataFrame(ftest_labels[0][np.newaxis,:],columns=columns)
 	y_pred = model.predict(predict_data)
 	pdb.set_trace()
 
@@ -612,6 +631,8 @@ elif action == 'runsvm':
 	DefaultParametersFullData(n_estimators=options.bags,startID=options.startID,resume=(not options.restart))
 elif action == 'modelcpds':
 	MakeModelCpds(hash=options.cpdhash)
+elif action == 'makebayes':
+	make_bayes_net(load=(not options.restart))
 elif action == 'runbayes':
 	BayesNetPredict()
 else: print("missing required arguments")
