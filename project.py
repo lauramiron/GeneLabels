@@ -386,7 +386,7 @@ def make_test_set(training_examples,training_labels,rstate=RAND_STATE):
 	num_test_samples = int(training_examples.shape[0]*0.632)
 	test_idxs = rstate.choice(range(0,training_examples.shape[0]),size=num_test_samples,replace=True)
 	test_set = np.zeros(shape=(num_test_samples,training_examples.shape[1]))
-	test_labels = np.zeros(shape=(num_test_samples,training_labels.shape[1]))
+	test_labels = np.zeros(shape=(num_test_samples,1))
 	for i in range(0,num_test_samples):
 		test_set[i] = training_examples[test_idxs[i]]
 		test_labels[i] = training_labels[test_idxs[i]]
@@ -448,28 +448,34 @@ def _loads(file_path):
 def _load_models_dict():
 	model_dir = RUNNING_MODEL_DIR
 	models_file = model_dir+'/all_models.p'
-	if not os.path.isfile(models_file):
-		print('Loading models from individual files')
-		models_dict = {}
-		for model_file in glob.glob(model_dir+'/model-*.p'):
-			name = 'GO:'+model_file.split('/')[-1].split('-')[-1].split('.')[0]
-			model = pickle.load(open(model_file,'rb'))
-			models_dict[name] = model
-		_dumps(models_dict,models_file)
-		# pickle.dump(models_dict,open(models_file,'wb'))
-	else:
-		print('Loading models from single file')
-		# models_dict = pickle.load(open(models_file,'rb'))
-		models_dict = _loads(models_file)
+	print('Loading models from individual files')
+	models_dict = {}
+	for model_file in glob.glob(model_dir+'/model-*97.p'):
+		name = 'GO:'+model_file.split('/')[-1].split('-')[-1].split('.')[0]
+		model = pickle.load(open(model_file,'rb'))
+		models_dict[name] = model
+	_dumps(models_dict,models_file)	
+	# if not os.path.isfile(models_file):
+	# 	print('Loading models from individual files')
+	# 	models_dict = {}
+	# 	for model_file in glob.glob(model_dir+'/model-*.p'):
+	# 		name = 'GO:'+model_file.split('/')[-1].split('-')[-1].split('.')[0]
+	# 		model = pickle.load(open(model_file,'rb'))
+	# 		models_dict[name] = model
+	# 	_dumps(models_dict,models_file)
+	# 	# pickle.dump(models_dict,open(models_file,'wb'))
+	# else:
+	# 	print('Loading models from single file')
+	# 	# models_dict = pickle.load(open(models_file,'rb'))
+	# 	models_dict = _loads(models_file)
 	return models_dict
 
-def get_model_cpds(training_data,training_labels_negs):
+def get_model_cpds(training_data,training_labels_negs,go_dict):
 	print('Getting cpds from svm predictions on test set')
 	# training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
 	training_labels = np.copy(training_labels_negs)
 	training_labels[np.where(training_labels==-1)] = 0
 	assert((training_labels!=-1).any())
-	validation_data, validation_labels = make_test_set(training_data,training_labels,rstate=RAND_STATE2)
 	models_dict = _load_models_dict()
 	cpds = []
 	i=1
@@ -477,13 +483,15 @@ def get_model_cpds(training_data,training_labels_negs):
 	for model_name in models_dict:
 		print(i,'/',num_models,' ',model_name)
 		i+=1
+		validation_data, validation_labels = make_test_set(training_data,training_labels[:,go_dict[model_name]],rstate=RAND_STATE2)
+		validation_labels = validation_labels.flatten()
 		model = models_dict[model_name]
 		y_pred = model.predict(validation_data)
 		yhat0_y0 = (1-y_pred[validation_labels==0]).sum() / (1-validation_labels).sum()
 		yhat0_y1 = (1-y_pred[validation_labels==1]).sum() / validation_labels.sum()
 		yhat1_y0 = (y_pred[validation_labels==0]).sum() / (1-validation_labels).sum()
 		yhat1_y1 = (y_pred[validation_labels==1]).sum() / validation_labels.sum()
-		cpd = TabularCPD(model+'_hat',2,[[yhat0_y0,yhat0_y1],[yhat1_y0,yhat1_y1]],evidence=[model_name],evidence_card=[2])
+		cpd = TabularCPD(model_name+'_hat',2,[[yhat0_y0,yhat0_y1],[yhat1_y0,yhat1_y1]],evidence=[model_name],evidence_card=[2])
 		cpd.normalize()
 		cpds.append(cpd)
 	pickle.dump(cpds,open(MODEL_CPDS_FILE,'wb'))
@@ -540,7 +548,7 @@ def make_bayes_net():
 				# cpd = TabularCPD(label,2,[[1,0],[0,1]],evidence=[child],evidence_card=[2])
 				# G.add_cpds(cpd)
 	
-	predicted_cpds = get_model_cpds(training_data,training_labels)
+	predicted_cpds = get_model_cpds(training_data,training_labels,go_dict)
 	for cpd in predicted_cpds:
 		G.add_cpds(cpd)
 	pdb.set_trace()
