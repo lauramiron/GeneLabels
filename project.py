@@ -12,6 +12,7 @@ from pgmpy.models import BayesianModel
 from pgmpy.factors.discrete.CPD import TabularCPD
 from numpy.random import RandomState
 import pandas as pd
+import matplotlib.pyplot as plt
 
 RAND_SEED=0
 RAND_STATE=np.random.RandomState(seed=RAND_SEED)
@@ -253,6 +254,22 @@ def FixOutOfDataGoIds():
 	kept=len(lines)-updated-retired
 	print("Out of "+str(len(lines))+" GO nodes in Hierarchical paper, "+str(kept)+" are kept, "+str(updated)+" are updated, and "+str(retired)+" are retired, leaving "+str(len(newlines))+" after removing duplicates")
 
+def update_ids(oldids):
+	obo_graph = obonet.read_obo(OBODB_FILE)
+	all_nodes = []
+	for idx, node in obo_graph.nodes(data=True):
+		all_nodes.append(idx)
+
+	alt_ids_dic = pickle.load(open(ALT_IDS_DICT_FILE,'rb'))
+	new_ids = []
+	for oldid in oldids:
+		if (oldid in all_nodes) and oldid not in new_ids:
+			new_ids.append(oldid)
+		elif oldid in alt_ids_dic:
+			newid = alt_ids_dic[oldid]
+			if newid not in new_ids:
+				new_ids.append(newid)
+	return new_ids
 
 def ConstructGoAnnotationArray():
 	genes_dict = pickle.load(open(GENES_DICT_FILE,'rb'))
@@ -464,12 +481,13 @@ def _load_models_dict(hash='*'):
 	# 	models_dict = _loads(models_file)
 	return models_dict
 
-def get_model_cpds():
+def get_model_cpds(labels_list=None):
 	cpds = []
 	for file_name in glob.glob(MODEL_CPDS_DIR+'/*'):
-		print(file_name)
-		cpd = pickle.load(open(file_name,'rb'))
-		cpds.append(cpd)
+		if (labels_list==None) or (file_name.split('/')[-1].split('.')[0] in labels_list):
+			print(file_name)
+			cpd = pickle.load(open(file_name,'rb'))
+			cpds.append(cpd)
 	return cpds
 
 def safe_div(x,y):
@@ -509,11 +527,11 @@ def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*'):
 	return cpds
 
 
-def get_true_label_cpds(training_labels_negs,go_dict):
+def get_true_label_cpds(training_labels_negs,go_dict,labels_list=None):
 	print('Calculating cpds for true label dependencies')
 	training_labels = np.copy(training_labels_negs)
 	training_labels[np.where(training_labels==-1)] = 0	
-	labels_list = go_dict.keys()
+	if labels_list == None: labels_list = go_dict.keys()
 	cpds = []
 	i=1
 	obo_graph = obonet.read_obo(OBODB_FILE)
@@ -546,7 +564,7 @@ def get_true_label_cpds(training_labels_negs,go_dict):
 	return cpds
 
 
-def make_bayes_net(load=False):
+def make_bayes_net(load=False,subtree=False):
 	print('Making bayes net')
 	graph_file = RUNNING_MODEL_DIR+'/'+'graph.p'
 	if os.path.isfile(graph_file) and load==True:
@@ -557,7 +575,12 @@ def make_bayes_net(load=False):
 		print('loading data...')
 		training_data, training_labels, inv_go_dict, inv_genes_dict = LoadCombinedData()
 		go_dict = {v: k for k, v in inv_go_dict.items()}
-		labels_list = go_dict.keys()
+		if subtree:
+			labels_list = ['GO:'+l.strip() for l in open(DATA_DIR+'subtree.txt','r').readlines()]
+			labels_list = update_ids(labels_list)
+			print(labels_list)
+		else:
+			labels_list = go_dict.keys()
 
 		print('adding nodes and edges...')
 		G = BayesianModel()
@@ -568,20 +591,48 @@ def make_bayes_net(load=False):
 			for child in children:
 				G.add_edge(child,label)
 		
-		predicted_cpds = get_model_cpds()
+		predicted_cpds = get_model_cpds(labels_list=labels_list)
 		for cpd in predicted_cpds:
 			G.add_cpds(cpd)
-		true_label_cpds = get_true_label_cpds(training_labels,go_dict)
+		true_label_cpds = get_true_label_cpds(training_labels,go_dict,labels_list=labels_list)
 		for cpd in true_label_cpds:
 			G.add_cpds(cpd)
 		remove_list = []
 		for node in G.nodes():
-			if G.get_cpds(node) == None: remove_list.append(node)
+			if G.get_cpds(node) == None: 
+				remove_list.append(node)
+				remove_list.append(node+'_hat')
 		for node in remove_list:
-			G.remove_node(node)
+			if node in G:
+				print("hi")
+				G.remove_node(node)
 		G.check_model()
 		pickle.dump(G,open(graph_file,'wb'))
 	return G
+
+def make_simple_bayes_net(subtree=False):
+	print('Making bayes net')
+	# graph_file = RUNNING_MODEL_DIR+'/'+'graph.p'
+	print('loading data...')
+	training_data, training_labels, inv_go_dict, inv_genes_dict = LoadCombinedData()
+	go_dict = {v: k for k, v in inv_go_dict.items()}
+	if subtree:
+		labels_list = ['GO:'+l.strip() for l in open(DATA_DIR+'subtree.txt','r').readlines()]
+		labels_list = update_ids(labels_list)
+		print(labels_list)
+	else:
+		labels_list = go_dict.keys()
+
+	print('adding nodes and edges...')
+	G = BayesianModel()
+	# G.add_edges_from([(label, label+'_hat') for label in labels_list])
+	obo_graph = obonet.read_obo(OBODB_FILE)
+	for label in labels_list:
+		children = [c for c in networkx.ancestors(obo_graph,label) if c in labels_list]
+		for child in children:
+			G.add_edge(label,child)
+	# G.check_model()
+	return G	
 
 def MakeModelCpds(hash='*'):
 	print('-------- Making model cpds -------')
@@ -590,28 +641,59 @@ def MakeModelCpds(hash='*'):
 	go_dict = {v: k for k, v in inv_go_dict.items()}
 	make_model_cpds(training_data,training_labels,go_dict,hash=hash)
 	
-def BayesNetPredict():
+def BayesNetPredict(subtree=False):
 	training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
-	model = make_bayes_net()
+	model = make_bayes_net(subtree=subtree)
 	test_data, test_labels = make_test_set(training_data,training_labels,rstate=RandomState(seed=RAND_SEED+2))
-	nodes = model.nodes()
+	bayes_nodes = model.nodes()
 	columns = []
 	remove_idxs = []
 	test_data = test_data.astype(int)
 	for i in range(len(go_inv_dict.keys())):
 		node_name = go_inv_dict[i]+'_hat'
-		if node_name not in nodes: remove_idxs.append(i)
+		if node_name not in bayes_nodes: remove_idxs.append(i)
 		else: columns.append(node_name)
 	ftest_labels = np.delete(test_labels,remove_idxs,axis=1)
+	ftest_one = ftest_labels[0][np.newaxis,:]
+	pdb.set_trace()
 	predict_data = pd.DataFrame(ftest_labels[0][np.newaxis,:],columns=columns)
 	y_pred = model.predict(predict_data)
+	y_prob = model.predict_probability(predict_data)
+	pickle.dump(y_pred,open('y_pred.p','wb'))
+	pickle.dump(y_prob,open('y_prob.p','wb'))
 	pdb.set_trace()
+
+def DrawGraph(subtree=False):
+	G = make_simple_bayes_net(subtree)
+	# pdb.set_trace()
+	# remove_list = []
+	# for node in G.nodes():
+	# 	if '_hat' in node:
+	# 		remove_list.append(node)
+	# for node in remove_list:
+	# 	G.remove_node(node)
+	networkx.draw_networkx(G)
+	plt.show()
+	pdb.set_trace()
+
+def MakeVisualizationGraph():
+	G = make_bayes_net()
+	remove_list = []
+	for node in G.nodes():
+		if '_hat' in node:
+			remove_list.append(node)
+	for node in remove_list:
+		G.remove_node(node)
+	pickle.dump(G,open('vis_graph.p','wb'))
+
+# MakeVisualizationGraph()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--bags',default=1,type=int)
 parser.add_argument('--startID',default=0,type=int)
 parser.add_argument('--restart',action='store_true',default=False)
 parser.add_argument('--cpdhash',default='*')
+parser.add_argument('--subtree',action='store_true',default=False)
 options, action = parser.parse_known_args()
 action = action[0]
 if action == 'ma_parsegds':
@@ -633,7 +715,10 @@ elif action == 'modelcpds':
 elif action == 'makebayes':
 	make_bayes_net(load=(not options.restart))
 elif action == 'runbayes':
-	BayesNetPredict()
+	BayesNetPredict(subtree=options.subtree)
+elif action == 'drawgraph':
+	# MakeVisualizationGraph()
+	DrawGraph(subtree=options.subtree)
 else: print("missing required arguments")
 
 
