@@ -1,3 +1,10 @@
+acc_dict.p
+bayes_acc.txt
+compare_acc.txt
+subtree.txt
+vis_graph.p
+y_pred_subtree.p
+y_pred_subtree2.p
 results/
 probable_junk/
 microarray/

@@ -348,12 +348,12 @@ def LoadCombinedData():
 	genes_dict = pickle.load(open(GENES_DICT_FILE,'rb'))
 	return data, label_data, {v: k for k, v in go_dict.items()}, {v: k for k, v in genes_dict.items()}
 
+
 def load_label_data():
 	label_data = np.loadtxt(GO_LABEL_ARR_FILE)
 	assert(label_data.shape[0]==label_data.shape[0])
 	go_dict = pickle.load(open(GO_DICT_FILE,'rb'))
-	genes_dict = pickle.load(open(GENES_DICT_FILE,'rb'))
-	return label_data, go_dict, {v: k for k, v in go_dict.items()}, {v: k for k, v in genes_dict.items()}
+	return label_data, go_dict
 
 
 def _timeModelDir(model_name='lineardefault'):
@@ -392,8 +392,8 @@ def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto',n_estimators=1,
 	os.rename(model_dir,_timeModelDir(model_name='lineardefault'))
 
 
-def make_test_set(training_examples,training_labels,rstate=RAND_STATE):
-	num_test_samples = int(training_examples.shape[0]*0.632)
+def make_test_set(training_examples,training_labels,rstate=RAND_STATE,num_test_samples=None):
+	num_test_samples = int(training_examples.shape[0]*0.632) if (num_test_samples == None) else num_test_samples
 	test_idxs = rstate.choice(range(0,training_examples.shape[0]),size=num_test_samples,replace=True)
 	test_set = np.zeros(shape=(num_test_samples,training_examples.shape[1]))
 	label_shape = 1 if (len(training_labels.shape) < 2) else training_labels.shape[1]
@@ -403,6 +403,14 @@ def make_test_set(training_examples,training_labels,rstate=RAND_STATE):
 		test_labels[i] = training_labels[test_idxs[i]]
 	return test_set, test_labels
 
+def make_label_set(training_labels,rstate=RAND_STATE,num_test_samples=None):
+	num_test_samples = int(training_labels.shape[0]*0.632) if (num_test_samples==None) else num_test_samples
+	test_idxs = rstate.choice(range(0,training_labels.shape[0]),size=num_test_samples,replace=True)
+	label_shape = 1 if (len(training_labels.shape) < 2) else training_labels.shape[1]
+	test_labels = np.zeros(shape=(num_test_samples,label_shape))
+	for i in range(0,num_test_samples):
+		test_labels[i] = training_labels[test_idxs[i]]
+	return test_labels
 
 def test_svm_model(kernel, training_examples, training_labels, C=1.0, gamma='auto',n_estimators=10):
 	model = ensemble.BaggingClassifier(svm.SVC(kernel=kernel, gamma=gamma, random_state=RAND_SEED), n_estimators=n_estimators,max_samples=0.632)
@@ -434,26 +442,20 @@ def get_true_false_positive_negative(y_pred, y):
 	print('TP, TN, FP, FN: ', TP, TN, FP, FN,'precision:', precision, 'recall', recall)
 	return TP, TN, FP, FN, precision, recall
 
-def _dumps(models_dict,file_path):
-	n_bytes = 2**31
-	max_bytes = n_bytes - 1
-	## write
-	bytes_out = pickle.dumps(models_dict)
-	with open(file_path, 'wb') as f_out:
-		for idx in range(0, len(bytes_out), max_bytes):
-			f_out.write(bytes_out[idx:idx+max_bytes])	
+def _load_models_dict_list(goids):
+	model_dir = RUNNING_MODEL_DIR
+	models_file = model_dir+'/all_models.p'
+	print('Loading models from goid list ')
+	models_dict = {}
+	for gid in goids:
+		model_file = model_dir+'/model-'+gid.split(':')[1]+'.p'
+		name = 'GO:'+model_file.split('/')[-1].split('-')[-1].split('.')[0]
+		model = pickle.load(open(model_file,'rb'))
+		models_dict[name] = model
+	return models_dict
 
-def _loads(file_path):
-	n_bytes = 2**31
-	max_bytes = n_bytes - 1
-	## read
-	bytes_in = bytearray(0)
-	input_size = os.path.getsize(file_path)
-	with open(file_path, 'rb') as f_in:
-		for _ in range(0, input_size, max_bytes):
-			bytes_in += f_in.read(max_bytes)
-	data2 = pickle.loads(bytes_in)
-	return data2
+def _load_models_dict_subtree():
+	return _load_models_dict_list(goids=_subtree_labels())
 
 
 def _load_models_dict(hash='*'):
@@ -465,41 +467,32 @@ def _load_models_dict(hash='*'):
 		name = 'GO:'+model_file.split('/')[-1].split('-')[-1].split('.')[0]
 		model = pickle.load(open(model_file,'rb'))
 		models_dict[name] = model
-	# _dumps(models_dict,models_file)	
-	# if not os.path.isfile(models_file):
-	# 	print('Loading models from individual files')
-	# 	models_dict = {}
-	# 	for model_file in glob.glob(model_dir+'/model-*.p'):
-	# 		name = 'GO:'+model_file.split('/')[-1].split('-')[-1].split('.')[0]
-	# 		model = pickle.load(open(model_file,'rb'))
-	# 		models_dict[name] = model
-	# 	_dumps(models_dict,models_file)
-	# 	# pickle.dump(models_dict,open(models_file,'wb'))
-	# else:
-	# 	print('Loading models from single file')
-	# 	# models_dict = pickle.load(open(models_file,'rb'))
-	# 	models_dict = _loads(models_file)
 	return models_dict
 
 def get_model_cpds(labels_list=None):
 	cpds = []
 	for file_name in glob.glob(MODEL_CPDS_DIR+'/*'):
-		if (labels_list==None) or (file_name.split('/')[-1].split('.')[0] in labels_list):
+		if (labels_list==None) or ('GO:'+file_name.split('/')[-1].split('.')[0] in labels_list):
 			print(file_name)
 			cpd = pickle.load(open(file_name,'rb'))
 			cpds.append(cpd)
 	return cpds
 
 def safe_div(x,y):
-	if y==0: return (x+1)/(y+2)
-	else: return x/y
+	if y==0: return float(x+1)/(y+2)
+	else: return float(x)/y
 
-def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*'):
+def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*',subtree=False):
 	print('Getting cpds from svm predictions on test set')
 	training_labels = np.copy(training_labels_negs)
 	training_labels[np.where(training_labels==-1)] = 0
 	assert((training_labels!=-1).any())
-	models_dict = _load_models_dict(hash=hash)
+	
+	if subtree:
+		models_dict = _load_models_dict_subtree()
+	else:
+		models_dict = _load_models_dict(hash=hash)
+	
 	cpds = []
 	i=1
 	num_models = len(models_dict.keys())
@@ -549,8 +542,8 @@ def get_true_label_cpds(training_labels_negs,go_dict,labels_list=None):
 		for gid in cgidxs:
 			delete_idxs += list(np.where(tlc[:,gid]==1)[0])
 		tlc = np.delete(tlc,delete_idxs,axis=0)
-		data[1,0] = tlc.sum(axis=0)[goidx] / tlc.shape[0]
-		data[0,0] = 1 - data[1,0]
+		data[1,0] = float(tlc.sum(axis=0)[goidx]) / tlc.shape[0]
+		data[0,0] = 1.0 - data[1,0]
 
 		evidence = []
 		evidence_card = []
@@ -563,8 +556,11 @@ def get_true_label_cpds(training_labels_negs,go_dict,labels_list=None):
 	pickle.dump(cpds,open(TRUE_LABEL_CPDS_FILE,'wb'))
 	return cpds
 
+def _subtree_labels():
+	return [l.strip() for l in open(DATA_DIR+'subtree.txt','r').readlines()]
 
-def make_bayes_net(load=False,subtree=False):
+
+def make_bayes_net(load=False,subtree=True):
 	print('Making bayes net')
 	graph_file = RUNNING_MODEL_DIR+'/'+'graph.p'
 	if os.path.isfile(graph_file) and load==True:
@@ -573,11 +569,9 @@ def make_bayes_net(load=False,subtree=False):
 		G.check_model()
 	else:
 		print('loading data...')
-		training_data, training_labels, inv_go_dict, inv_genes_dict = LoadCombinedData()
-		go_dict = {v: k for k, v in inv_go_dict.items()}
+		training_labels, go_dict = load_label_data()
 		if subtree:
-			labels_list = ['GO:'+l.strip() for l in open(DATA_DIR+'subtree.txt','r').readlines()]
-			labels_list = update_ids(labels_list)
+			labels_list = _subtree_labels()
 			print(labels_list)
 		else:
 			labels_list = go_dict.keys()
@@ -598,13 +592,13 @@ def make_bayes_net(load=False,subtree=False):
 		for cpd in true_label_cpds:
 			G.add_cpds(cpd)
 		remove_list = []
+		# pdb.set_trace()
 		for node in G.nodes():
 			if G.get_cpds(node) == None: 
 				remove_list.append(node)
-				remove_list.append(node+'_hat')
+				# remove_list.append(node+'_hat')
 		for node in remove_list:
 			if node in G:
-				print("hi")
 				G.remove_node(node)
 		G.check_model()
 		pickle.dump(G,open(graph_file,'wb'))
@@ -612,13 +606,10 @@ def make_bayes_net(load=False,subtree=False):
 
 def make_simple_bayes_net(subtree=False):
 	print('Making bayes net')
-	# graph_file = RUNNING_MODEL_DIR+'/'+'graph.p'
 	print('loading data...')
-	training_data, training_labels, inv_go_dict, inv_genes_dict = LoadCombinedData()
-	go_dict = {v: k for k, v in inv_go_dict.items()}
+	training_data, go_dict = load_label_data()
 	if subtree:
-		labels_list = ['GO:'+l.strip() for l in open(DATA_DIR+'subtree.txt','r').readlines()]
-		labels_list = update_ids(labels_list)
+		labels_list = _subtree_labels()
 		print(labels_list)
 	else:
 		labels_list = go_dict.keys()
@@ -631,7 +622,6 @@ def make_simple_bayes_net(subtree=False):
 		children = [c for c in networkx.ancestors(obo_graph,label) if c in labels_list]
 		for child in children:
 			G.add_edge(label,child)
-	# G.check_model()
 	return G	
 
 def MakeModelCpds(hash='*'):
@@ -640,38 +630,122 @@ def MakeModelCpds(hash='*'):
 	training_data, training_labels, inv_go_dict, inv_genes_dict = LoadCombinedData()
 	go_dict = {v: k for k, v in inv_go_dict.items()}
 	make_model_cpds(training_data,training_labels,go_dict,hash=hash)
-	
-def BayesNetPredict(subtree=False):
-	training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
+
+# def _remove_negs(training_labels_negs):
+# 	training_labels = np.copy(training_labels_negs)
+# 	training_labels[np.where(training_labels==-1)] = 0
+# 	assert((training_labels!=-1).any())
+# 	return training_labels
+
+def BayesNetPredict(subtree=False,num_test_samples=1):
+	training_labels, go_dict = load_label_data()
+	training_labels[np.where(training_labels==-1)] = 0
 	model = make_bayes_net(subtree=subtree)
-	test_data, test_labels = make_test_set(training_data,training_labels,rstate=RandomState(seed=RAND_SEED+2))
+	test_labels = make_label_set(training_labels,rstate=RandomState(seed=RAND_SEED+2))
 	bayes_nodes = model.nodes()
+	
 	columns = []
-	remove_idxs = []
-	test_data = test_data.astype(int)
-	for i in range(len(go_inv_dict.keys())):
-		node_name = go_inv_dict[i]+'_hat'
-		if node_name not in bayes_nodes: remove_idxs.append(i)
-		else: columns.append(node_name)
-	ftest_labels = np.delete(test_labels,remove_idxs,axis=1)
-	ftest_one = ftest_labels[0][np.newaxis,:]
-	pdb.set_trace()
-	predict_data = pd.DataFrame(ftest_labels[0][np.newaxis,:],columns=columns)
+	idxs = []
+	for goid in go_dict:
+		node_name = goid+'_hat'
+		if node_name in bayes_nodes: 
+			columns.append(node_name)
+			idxs.append(go_dict[goid])
+	ftest_labels = test_labels[:,idxs]
+	predict_data = pd.DataFrame(ftest_labels[0:num_test_samples],columns=columns)
 	y_pred = model.predict(predict_data)
-	y_prob = model.predict_probability(predict_data)
-	pickle.dump(y_pred,open('y_pred.p','wb'))
-	pickle.dump(y_prob,open('y_prob.p','wb'))
+	# y_prob = model.predict_probability(predict_data)
+	print(y_pred)
+	timestring = time.strftime("%m-%d-%H.%M")
+	pickle.dump(y_pred,open('y_pred_'+timestring+'.p','wb'))
+
+	acc_dict = {}
+	for c in y_pred.columns:
+		y_pred_c = y_pred[c]
+		true_labels = test_labels[:,go_dict[c]][0:num_test_samples]
+		num_correct = (y_pred_c.values==true_labels.flatten()).sum()
+		acc = float(num_correct) / num_test_samples
+		acc_dict[c] = acc
+		print('completed ',c,' ',acc)
+	pickle.dump(acc_dict,open('acc_dict_'+timestring+'.p','wb'))
 	pdb.set_trace()
+
+# def bayes_accuracy(subtree=True):
+# 	print('bayes bayes_accuracy')
+# 	# model = make_bayes_net(subtree=subtree)
+# 	training_labels_negs, go_inv_dict, genes_inv_dict = load_label_data()
+# 	training_labels = np.copy(training_labels_negs)
+# 	training_labels[np.where(training_labels==-1)] = 0
+# 	assert((training_labels!=-1).any())
+# 	test_labels = make_label_set(training_labels,rstate=RandomState(seed=RAND_SEED+2))
+# 	# bayes_nodes = model.nodes()
+# 	bayes_nodes = ['GO:'+l.strip() for l in open(DATA_DIR+'subtree.txt','r').readlines()]
+# 	columns = []
+# 	remove_idxs = []
+# 	for i in range(len(go_inv_dict.keys())):
+# 		node_name = go_inv_dict[i]
+# 		if node_name not in bayes_nodes: remove_idxs.append(i)
+# 		else: columns.append(node_name)
+# 	ftest_labels = np.delete(test_labels,remove_idxs,axis=1)
+# 	ftest_one = ftest_labels[0][np.newaxis,:]
+# 	# predict_data = pd.DataFrame(ftest_labels,columns=columns)
+# 	y_pred = pickle.load(open('y_pred_subtree2.p','rb'))
+# 	# y_pred = model.predict(predict_data)
+# 	# pickle.dump(y_pred,open('y_pred_subtree2.p','wb'))
+
+# 	acc_dict = {}
+# 	# pdb.set_trafce()
+# 	for i in range(len(y_pred.columns)):
+# 		c = y_pred.columns[i]
+# 		y_pred_c = y_pred[c]
+# 		# pdb.set_trace()
+# 		true_labels = ftest_labels[:,i]
+# 		num_correct = (y_pred_c.values==true_labels.flatten()).sum()
+# 		acc = float(num_correct) / training_data.shape[0]
+# 		acc_dict[c] = acc
+# 		open('bayes_acc.txt','a+').write(c+'\t'+str(acc)+'\n')
+# 		print('completed ',c,' ',acc)
+# 	pickle.dump(acc_dict,open('acc_dict.p','wb'))
+# 	pdb.set_trace()
+
+def CompareSvm(subtree=False):
+	print('running svms')
+	y_pred_bayes = pickle.load(open('y_pred_subtree.p','rb'))
+	training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()	
+	go_dict = {v: k for k, v in go_inv_dict.items()}
+	bayes_model = make_simple_bayes_net()
+	columns = y_pred_bayes.columns
+	models_dict = _load_models_dict_list(columns)
+	svm_acc_dict = {}
+	
+	for model in models_dict:
+		test_data, test_labels = make_test_set(training_data,training_labels[:,go_dict[model]],rstate=RAND_STATE2)
+		mm = models_dict[model]
+		svm_y_pred = mm.predict(test_data)
+		num_correct = (svm_y_pred == test_labels.flatten()).sum()
+		acc = float(num_correct) / training_labels.shape[0]
+		svm_acc_dict[model] = acc
+		with open('compare_acc.txt','a+') as f:
+			try:
+				svm_acc = acc
+				# bayes_acc = bayes_acc_dict[model]
+				f.write(model+'\t'+str(svm_acc)+'\n')
+			except:
+				print(model)
+		print('completed ',model)
+	# bayes_acc_dict = pickle.load(open('acc_dict.p','rb'))
+	
+	# with open('compare_acc.txt','a+') as f:
+	# 	f.write('node\t svm \t bayes'+'\n')
+	# 	for model in models_dict:
+	# 		svm_acc = svm_acc_dict[model]
+	# 		bayes_acc = bayes_acc_dict[model]
+	# 		f.write(model+'\t'+str(svm_acc)+'\t'+str(bayes_acc)+'\n')
+
+
 
 def DrawGraph(subtree=False):
 	G = make_simple_bayes_net(subtree)
-	# pdb.set_trace()
-	# remove_list = []
-	# for node in G.nodes():
-	# 	if '_hat' in node:
-	# 		remove_list.append(node)
-	# for node in remove_list:
-	# 	G.remove_node(node)
 	networkx.draw_networkx(G)
 	plt.show()
 	pdb.set_trace()
@@ -686,7 +760,6 @@ def MakeVisualizationGraph():
 		G.remove_node(node)
 	pickle.dump(G,open('vis_graph.p','wb'))
 
-# MakeVisualizationGraph()
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--bags',default=1,type=int)
@@ -719,6 +792,10 @@ elif action == 'runbayes':
 elif action == 'drawgraph':
 	# MakeVisualizationGraph()
 	DrawGraph(subtree=options.subtree)
+elif action == 'compare':
+	CompareSvm()
+# elif action == 'bayesacc':
+# 	bayes_accuracy()
 else: print("missing required arguments")
 
 
