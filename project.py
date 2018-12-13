@@ -23,6 +23,7 @@ RESULTS_DIR=r'results/'
 RUNNING_MODEL_DIR = RESULTS_DIR+'1-running_model'
 MODEL_CPDS_FILE = RUNNING_MODEL_DIR+'/model_cpds.p'
 MODEL_CPDS_DIR = RUNNING_MODEL_DIR+'/model_cpds'
+MODEL_CPDS_STATES_DIR = RUNNING_MODEL_DIR+'/model_cpds'
 TRUE_LABEL_CPDS_FILE = RUNNING_MODEL_DIR+'/true_label_cpds.p'
 MICROARRAY_SERIES = ['GSM992', 'GSM1000', 'GSM993', 'GSM994', 'GSM995', 'GSM996', 'GSM998', 'GSM1004', 'GSM1005', 'GSM1006', 'GSM1008', 'GSM1012', 'GSM1015', 'GSM1007', 'GSM1009', 'GSM1013', 'GSM1014', 'GSM1105', 'GSM1100', 'GSM1101', 'GSM1104', 'GSM895', 'GSM1106', 'GSM1107', 'GSM1102', 'GSM1103', 'GSM1111', 'GSM899', 'GSM1041', 'GSM1047', 'GSM1042', 'GSM1043', 'GSM1044', 'GSM1045', 'GSM1046', 'GSM1055', 'GSM1029', 'GSM1030', 'GSM1032', 'GSM1033', 'GSM1034', 'GSM1048', 'GSM1049', 'GSM1050', 'GSM1051', 'GSM1052', 'GSM1053', 'GSM1054', 'GSM1075', 'GSM1076', 'GSM1090', 'GSM1077', 'GSM1078', 'GSM883', 'GSM930', 'GSM929', 'GSM928', 'GSM926', 'GSM925', 'GSM854', 'GSM855', 'GSM856', 'GSM857', 'GSM864', 'GSM865', 'GSM868', 'GSM872', 'GSM1002', 'GSM1003', 'GSM842', 'GSM843', 'GSM844', 'GSM845', 'GSM846', 'GSM847', 'GSM848', 'GSM849', 'GSM850', 'GSM851', 'GSM880', 'GSM881', 'GSM882', 'GSM874', 'GSM875', 'GSM876', 'GSM877', 'GSM878', 'GSM879', 'GSM972', 'GSM1039', 'GSM1040', 'GSM1037', 'GSM938', 'GSM939', 'GSM907', 'GSM990', 'GSM991', 'GSM997', 'GSM999', 'GSM1001', 'GSM971', 'GSM1057', 'GSM1058', 'GSM1059', 'GSM1060', 'GSM1061', 'GSM1063', 'GSM1064', 'GSM961', 'GSM962', 'GSM963', 'GSM964', 'GSM965', 'GSM966', 'GSM967', 'GSM968', 'GSM1019', 'GSM1020', 'GSM1021', 'GSM1022', 'GSM1023', 'GSM934', 'GSM935', 'GSM936', 'GSM1025', 'GSM937', 'GSM1024', 'GSM918', 'GSM919', 'GSM932', 'GSM933', 'GSM980', 'GSM863', 'GSM921', 'GSM920', 'GSM988', 'GSM922', 'GSM989', 'GSM858', 'GSM902', 'GSM931', 'GSM861', 'GSM862', 'GSM923', 'GSM860', 'GSM924', 'GSM859', 'GSM940', 'GSM942', 'GSM910', 'GSM969', 'GSM970', 'GSM973', 'GSM974', 'GSM975', 'GSM976', 'GSM984', 'GSM977', 'GSM903', 'GSM906', 'GSM985']
 GO_NODES_LIST_FILE = DATA_DIR+'go_nodes_list.txt'
@@ -478,11 +479,20 @@ def get_model_cpds(labels_list=None):
 			cpds.append(cpd)
 	return cpds
 
+def make_model_cpds_subtree(training_data,training_labels_negs,go_dict,use_state_names=False):
+	print('making model cpds for subtree only')
+	cpds = []
+	labels_list = _subtree_labels()
+	for label in labels_list:
+		hash = label.split(':')[-1]
+		cpds += make_model_cpds(training_data,training_labels_negs,go_dict,hash=hash,use_state_names=use_state_names)
+	return cpds
+
 def safe_div(x,y):
 	if y==0: return float(x+1)/(y+2)
 	else: return float(x)/y
 
-def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*',subtree=False):
+def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*',subtree=False,use_state_names=False):
 	print('Getting cpds from svm predictions on test set')
 	training_labels = np.copy(training_labels_negs)
 	training_labels[np.where(training_labels==-1)] = 0
@@ -496,8 +506,6 @@ def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*',subtree=
 	cpds = []
 	i=1
 	num_models = len(models_dict.keys())
-	if not os.path.isdir(MODEL_CPDS_DIR):
-		os.mkdir(MODEL_CPDS_DIR)
 	for model_name in models_dict:
 		print(i,'/',num_models,' ',model_name)
 		i+=1
@@ -512,11 +520,19 @@ def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*',subtree=
 		yhat0_y1 = safe_div((1-y_pred[validation_labels==1]).sum(),validation_labels.sum())
 		yhat1_y0 = safe_div((y_pred[validation_labels==0]).sum(),(1-validation_labels).sum())
 		yhat1_y1 = safe_div((y_pred[validation_labels==1]).sum(),validation_labels.sum())
-		cpd = TabularCPD(model_name+'_hat',2,[[yhat0_y0,yhat0_y1],[yhat1_y0,yhat1_y1]],evidence=[model_name],evidence_card=[2])
+		if use_state_names:
+			state_names = [model_name+'_hat_0',model_name+'_hat_1']
+			cpd = TabularCPD(model_name+'_hat',2,[[yhat0_y0,yhat0_y1],[yhat1_y0,yhat1_y1]],evidence=[model_name],evidence_card=[2],state_names=state_names)
+			outputdir = MODEL_CPDS_STATES_DIR
+		else:
+			cpd = TabularCPD(model_name+'_hat',2,[[yhat0_y0,yhat0_y1],[yhat1_y0,yhat1_y1]],evidence=[model_name],evidence_card=[2])	
+			outputdir = MODEL_CPDS_DIR
 		cpd.normalize()
 		cpds.append(cpd)
-		pickle.dump(cpd,open(MODEL_CPDS_DIR+'/'+model_name.split(':')[1]+'.p','wb'))
-	pickle.dump(cpds,open(MODEL_CPDS_FILE,'wb'))
+		if not os.path.isdir(outputdir):
+			os.mkdir(outputdir)
+		pickle.dump(cpd,open(outputdir+'/'+model_name.split(':')[1]+'.p','wb'))
+	# pickle.dump(cpds,open(MODEL_CPDS_FILE,'wb'))
 	return cpds
 
 
@@ -550,7 +566,8 @@ def get_true_label_cpds(training_labels_negs,go_dict,labels_list=None):
 		for child in children:
 			evidence.append(child)
 			evidence_card.append(2)
-		cpd = TabularCPD(label,2,data,evidence=evidence,evidence_card=evidence_card)
+		state_names = [label+'_0',label+'_1']
+		cpd = TabularCPD(label,2,data,evidence=evidence,evidence_card=evidence_card,state_names=state_names)
 		cpd.normalize()
 		cpds.append(cpd)
 	pickle.dump(cpds,open(TRUE_LABEL_CPDS_FILE,'wb'))
@@ -624,18 +641,16 @@ def make_simple_bayes_net(subtree=False):
 			G.add_edge(label,child)
 	return G	
 
-def MakeModelCpds(hash='*'):
+def MakeModelCpds(hash='*',subtree=False,use_state_names=False):
 	print('-------- Making model cpds -------')
 	print('loading data...')
 	training_data, training_labels, inv_go_dict, inv_genes_dict = LoadCombinedData()
 	go_dict = {v: k for k, v in inv_go_dict.items()}
-	make_model_cpds(training_data,training_labels,go_dict,hash=hash)
+	if subtree:
+		make_model_cpds_subtree(training_data,training_labels,go_dict,use_state_names)
+	else:
+		make_model_cpds(training_data,training_labels,go_dict,hash=hash,use_state_names)
 
-# def _remove_negs(training_labels_negs):
-# 	training_labels = np.copy(training_labels_negs)
-# 	training_labels[np.where(training_labels==-1)] = 0
-# 	assert((training_labels!=-1).any())
-# 	return training_labels
 
 def BayesNetPredict(subtree=False,num_test_samples=1):
 	training_labels, go_dict = load_label_data()
@@ -654,8 +669,9 @@ def BayesNetPredict(subtree=False,num_test_samples=1):
 	ftest_labels = test_labels[:,idxs]
 	predict_data = pd.DataFrame(ftest_labels[0:num_test_samples],columns=columns)
 	y_pred = model.predict(predict_data)
-	# y_prob = model.predict_probability(predict_data)
-	print(y_pred)
+	y_prob = model.predict_probability(predict_data)
+	pdb.set_trace()
+	# print(y_pred)
 	timestring = time.strftime("%m-%d-%H.%M")
 	pickle.dump(y_pred,open('y_pred_'+timestring+'.p','wb'))
 
@@ -767,6 +783,7 @@ parser.add_argument('--startID',default=0,type=int)
 parser.add_argument('--restart',action='store_true',default=False)
 parser.add_argument('--cpdhash',default='*')
 parser.add_argument('--subtree',action='store_true',default=False)
+parser.add_argument('--statenames',action='store_true',default=False)
 options, action = parser.parse_known_args()
 action = action[0]
 if action == 'ma_parsegds':
@@ -784,7 +801,7 @@ elif action == 'pair_makearr':
 elif action == 'runsvm':
 	DefaultParametersFullData(n_estimators=options.bags,startID=options.startID,resume=(not options.restart))
 elif action == 'modelcpds':
-	MakeModelCpds(hash=options.cpdhash)
+	MakeModelCpds(hash=options.cpdhash,subtree=options.subtree,use_state_names=options.statenames)
 elif action == 'makebayes':
 	make_bayes_net(load=(not options.restart))
 elif action == 'runbayes':
