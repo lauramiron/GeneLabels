@@ -380,7 +380,10 @@ def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto',n_estimators=1,
 	
 	# for i in range(startID,training_labels.shape[1]):
 	# 	goid = go_inv_dict[i]
+	i=1
 	for goid in _subtree_labels():
+		print(i,'/',len(_subtree_labels()),' ',goid)
+		i+=1
 		model_training_data = training_data[np.where(training_labels[:,i]!=-1)]
 		model_training_labels = training_labels[np.where(training_labels[:,i]!=-1)][:,i]
 		if not (model_training_labels==1).any(): model, score = None, -1
