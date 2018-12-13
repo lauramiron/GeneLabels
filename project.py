@@ -479,20 +479,20 @@ def get_model_cpds(labels_list=None):
 			cpds.append(cpd)
 	return cpds
 
-def make_model_cpds_subtree(training_data,training_labels_negs,go_dict,use_state_names=False):
+def make_model_cpds_subtree(training_data,training_labels_negs,go_dict,use_state_names=False,outputdir=MODEL_CPDS_STATES_DIR):
 	print('making model cpds for subtree only')
 	cpds = []
 	labels_list = _subtree_labels()
 	for label in labels_list:
 		hash = label.split(':')[-1]
-		cpds += make_model_cpds(training_data,training_labels_negs,go_dict,hash=hash,use_state_names=use_state_names)
+		cpds += make_model_cpds(training_data,training_labels_negs,go_dict,hash=hash,use_state_names=use_state_names,outputdir=outputdir)
 	return cpds
 
 def safe_div(x,y):
 	if y==0: return float(x+1)/(y+2)
 	else: return float(x)/y
 
-def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*',subtree=False,use_state_names=False):
+def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*',subtree=False,use_state_names=False,outputdir=MODEL_CPDS_DIR):
 	print('Getting cpds from svm predictions on test set')
 	training_labels = np.copy(training_labels_negs)
 	training_labels[np.where(training_labels==-1)] = 0
@@ -523,10 +523,10 @@ def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*',subtree=
 		if use_state_names:
 			state_names = [model_name+'_hat_0',model_name+'_hat_1']
 			cpd = TabularCPD(model_name+'_hat',2,[[yhat0_y0,yhat0_y1],[yhat1_y0,yhat1_y1]],evidence=[model_name],evidence_card=[2],state_names=state_names)
-			outputdir = MODEL_CPDS_STATES_DIR
+			# outputdir = MODEL_CPDS_STATES_DIR
 		else:
 			cpd = TabularCPD(model_name+'_hat',2,[[yhat0_y0,yhat0_y1],[yhat1_y0,yhat1_y1]],evidence=[model_name],evidence_card=[2])	
-			outputdir = MODEL_CPDS_DIR
+			# outputdir = MODEL_CPDS_DIR
 		cpd.normalize()
 		cpds.append(cpd)
 		if not os.path.isdir(outputdir):
@@ -641,15 +641,15 @@ def make_simple_bayes_net(subtree=False):
 			G.add_edge(label,child)
 	return G	
 
-def MakeModelCpds(hash='*',subtree=False,use_state_names=False):
+def MakeModelCpds(hash='*',subtree=False,use_state_names=False,outputdir=MODEL_CPDS_DIR):
 	print('-------- Making model cpds -------')
 	print('loading data...')
 	training_data, training_labels, inv_go_dict, inv_genes_dict = LoadCombinedData()
 	go_dict = {v: k for k, v in inv_go_dict.items()}
 	if subtree:
-		make_model_cpds_subtree(training_data,training_labels,go_dict,use_state_names)
+		make_model_cpds_subtree(training_data,training_labels,go_dict,use_state_names,outputdir)
 	else:
-		make_model_cpds(training_data,training_labels,go_dict,hash=hash,use_state_names)
+		make_model_cpds(training_data,training_labels,go_dict,hash=hash,use_state_names,outputdir)
 
 
 def BayesNetPredict(subtree=False,num_test_samples=1):
@@ -784,6 +784,7 @@ parser.add_argument('--restart',action='store_true',default=False)
 parser.add_argument('--cpdhash',default='*')
 parser.add_argument('--subtree',action='store_true',default=False)
 parser.add_argument('--statenames',action='store_true',default=False)
+parser.add_argument('--outputdir',default=None)
 options, action = parser.parse_known_args()
 action = action[0]
 if action == 'ma_parsegds':
@@ -801,7 +802,10 @@ elif action == 'pair_makearr':
 elif action == 'runsvm':
 	DefaultParametersFullData(n_estimators=options.bags,startID=options.startID,resume=(not options.restart))
 elif action == 'modelcpds':
-	MakeModelCpds(hash=options.cpdhash,subtree=options.subtree,use_state_names=options.statenames)
+	if options.outputdir:
+		MakeModelCpds(hash=options.cpdhash,subtree=options.subtree,use_state_names=options.statenames,outputdir=options.outputdir)
+	else:
+		MakeModelCpds(hash=options.cpdhash,subtree=options.subtree,use_state_names=options.statenames)		
 elif action == 'makebayes':
 	make_bayes_net(load=(not options.restart))
 elif action == 'runbayes':
