@@ -22,7 +22,7 @@ OUTPUT_DIR=r'output/'
 RESULTS_DIR=r'results/'
 RUNNING_MODEL_DIR = RESULTS_DIR+'1-running_model'
 MODEL_CPDS_FILE = RUNNING_MODEL_DIR+'/model_cpds.p'
-MODEL_CPDS_DIR = RUNNING_MODEL_DIR+'/model_cpds'
+MODEL_CPDS_DIR = RUNNING_MODEL_DIR+'/model_cpds_states'
 MODEL_CPDS_STATES_DIR = RUNNING_MODEL_DIR+'/model_cpds'
 TRUE_LABEL_CPDS_FILE = RUNNING_MODEL_DIR+'/true_label_cpds.p'
 MICROARRAY_SERIES = ['GSM992', 'GSM1000', 'GSM993', 'GSM994', 'GSM995', 'GSM996', 'GSM998', 'GSM1004', 'GSM1005', 'GSM1006', 'GSM1008', 'GSM1012', 'GSM1015', 'GSM1007', 'GSM1009', 'GSM1013', 'GSM1014', 'GSM1105', 'GSM1100', 'GSM1101', 'GSM1104', 'GSM895', 'GSM1106', 'GSM1107', 'GSM1102', 'GSM1103', 'GSM1111', 'GSM899', 'GSM1041', 'GSM1047', 'GSM1042', 'GSM1043', 'GSM1044', 'GSM1045', 'GSM1046', 'GSM1055', 'GSM1029', 'GSM1030', 'GSM1032', 'GSM1033', 'GSM1034', 'GSM1048', 'GSM1049', 'GSM1050', 'GSM1051', 'GSM1052', 'GSM1053', 'GSM1054', 'GSM1075', 'GSM1076', 'GSM1090', 'GSM1077', 'GSM1078', 'GSM883', 'GSM930', 'GSM929', 'GSM928', 'GSM926', 'GSM925', 'GSM854', 'GSM855', 'GSM856', 'GSM857', 'GSM864', 'GSM865', 'GSM868', 'GSM872', 'GSM1002', 'GSM1003', 'GSM842', 'GSM843', 'GSM844', 'GSM845', 'GSM846', 'GSM847', 'GSM848', 'GSM849', 'GSM850', 'GSM851', 'GSM880', 'GSM881', 'GSM882', 'GSM874', 'GSM875', 'GSM876', 'GSM877', 'GSM878', 'GSM879', 'GSM972', 'GSM1039', 'GSM1040', 'GSM1037', 'GSM938', 'GSM939', 'GSM907', 'GSM990', 'GSM991', 'GSM997', 'GSM999', 'GSM1001', 'GSM971', 'GSM1057', 'GSM1058', 'GSM1059', 'GSM1060', 'GSM1061', 'GSM1063', 'GSM1064', 'GSM961', 'GSM962', 'GSM963', 'GSM964', 'GSM965', 'GSM966', 'GSM967', 'GSM968', 'GSM1019', 'GSM1020', 'GSM1021', 'GSM1022', 'GSM1023', 'GSM934', 'GSM935', 'GSM936', 'GSM1025', 'GSM937', 'GSM1024', 'GSM918', 'GSM919', 'GSM932', 'GSM933', 'GSM980', 'GSM863', 'GSM921', 'GSM920', 'GSM988', 'GSM922', 'GSM989', 'GSM858', 'GSM902', 'GSM931', 'GSM861', 'GSM862', 'GSM923', 'GSM860', 'GSM924', 'GSM859', 'GSM940', 'GSM942', 'GSM910', 'GSM969', 'GSM970', 'GSM973', 'GSM974', 'GSM975', 'GSM976', 'GSM984', 'GSM977', 'GSM903', 'GSM906', 'GSM985']
@@ -364,7 +364,7 @@ def _timeModelDir(model_name='lineardefault'):
 	return dirname
 
 
-def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto',n_estimators=1,resume=True,startID=0):
+def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto',n_estimators=1,resume=True,startID=0,subtree=False):
 	print('-----Running SVM on all GO IDs-----')   
 	training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
 	# models_dict = {}
@@ -378,8 +378,9 @@ def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto',n_estimators=1,
 		os.mkdir(model_dir)
 		open(scores_file,'w+').write("GOID\tscore\tkernel\tC\tgamma\n")
 	
-	for i in range(startID,training_labels.shape[1]):
-		goid = go_inv_dict[i]
+	# for i in range(startID,training_labels.shape[1]):
+	# 	goid = go_inv_dict[i]
+	for goid in _subtree_labels():
 		model_training_data = training_data[np.where(training_labels[:,i]!=-1)]
 		model_training_labels = training_labels[np.where(training_labels[:,i]!=-1)][:,i]
 		if not (model_training_labels==1).any(): model, score = None, -1
@@ -390,7 +391,7 @@ def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto',n_estimators=1,
 		print(str(i+1)+'/'+str(training_labels.shape[1])+' ID:'+goid+' acc: '+str(score))
 		pickle.dump(model,open(os.path.join(model_dir,'model-'+goid.split(':')[1]+'.p'),'wb'))
 	# pickle.dump(models_dict,open(os.path.join(model_dir,'all_models.p'),'wb'))
-	os.rename(model_dir,_timeModelDir(model_name='lineardefault'))
+	# os.rename(model_dir,_timeModelDir(model_name='lineardefault'))
 
 
 def make_test_set(training_examples,training_labels,rstate=RAND_STATE,num_test_samples=None):
@@ -402,7 +403,7 @@ def make_test_set(training_examples,training_labels,rstate=RAND_STATE,num_test_s
 	for i in range(0,num_test_samples):
 		test_set[i] = training_examples[test_idxs[i]]
 		test_labels[i] = training_labels[test_idxs[i]]
-	return test_set, test_labels
+	return test_set, test_labels, test_idxs
 
 def make_label_set(training_labels,rstate=RAND_STATE,num_test_samples=None):
 	num_test_samples = int(training_labels.shape[0]*0.632) if (num_test_samples==None) else num_test_samples
@@ -414,7 +415,7 @@ def make_label_set(training_labels,rstate=RAND_STATE,num_test_samples=None):
 	return test_labels
 
 def test_svm_model(kernel, training_examples, training_labels, C=1.0, gamma='auto',n_estimators=10):
-	model = ensemble.BaggingClassifier(svm.SVC(kernel=kernel, gamma=gamma, random_state=RAND_SEED), n_estimators=n_estimators,max_samples=0.632)
+	model = ensemble.BaggingClassifier(svm.SVC(kernel=kernel, gamma=gamma, random_state=RAND_SEED, probability=True), n_estimators=n_estimators,max_samples=0.632)
 	model.fit(training_examples, training_labels)
 	test_set, test_labels = make_test_set(training_examples,training_labels)
 	test_score = model.score(test_set, test_labels)
@@ -470,12 +471,14 @@ def _load_models_dict(hash='*'):
 		models_dict[name] = model
 	return models_dict
 
-def get_model_cpds(labels_list=None):
+def get_model_cpds(labels_list=None,modelsdir=MODEL_CPDS_DIR,use_state_names=False):
 	cpds = []
-	for file_name in glob.glob(MODEL_CPDS_DIR+'/*'):
+	for file_name in glob.glob(modelsdir+'/*'):
 		if (labels_list==None) or ('GO:'+file_name.split('/')[-1].split('.')[0] in labels_list):
 			print(file_name)
 			cpd = pickle.load(open(file_name,'rb'))
+			if not use_state_names:
+				cpd = TabularCPD(cpd.variable,cpd.variable_card,cpd.values,cpd.variables[1:],cpd.cardinality[1:])
 			cpds.append(cpd)
 	return cpds
 
@@ -513,7 +516,7 @@ def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*',subtree=
 		if model == None:
 			print('NO DATA for ',model_name,', skipping...')
 			continue
-		validation_data, validation_labels = make_test_set(training_data,training_labels[:,go_dict[model_name]],rstate=RAND_STATE2)
+		validation_data, validation_labels, _ = make_test_set(training_data,training_labels[:,go_dict[model_name]],rstate=RAND_STATE2)
 		validation_labels = validation_labels.flatten()
 		y_pred = model.predict(validation_data)
 		yhat0_y0 = safe_div((1-y_pred[validation_labels==0]).sum(),(1-validation_labels).sum())
@@ -521,7 +524,8 @@ def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*',subtree=
 		yhat1_y0 = safe_div((y_pred[validation_labels==0]).sum(),(1-validation_labels).sum())
 		yhat1_y1 = safe_div((y_pred[validation_labels==1]).sum(),validation_labels.sum())
 		if use_state_names:
-			state_names = [model_name+'_hat_0',model_name+'_hat_1']
+			# state_names = {model_name+'_hat':'0',model_name+'_hat':'1'}
+			state_names = [0,1]
 			cpd = TabularCPD(model_name+'_hat',2,[[yhat0_y0,yhat0_y1],[yhat1_y0,yhat1_y1]],evidence=[model_name],evidence_card=[2],state_names=state_names)
 			# outputdir = MODEL_CPDS_STATES_DIR
 		else:
@@ -536,7 +540,7 @@ def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*',subtree=
 	return cpds
 
 
-def get_true_label_cpds(training_labels_negs,go_dict,labels_list=None):
+def get_true_label_cpds(training_labels_negs,go_dict,labels_list=None,use_state_names=False):
 	print('Calculating cpds for true label dependencies')
 	training_labels = np.copy(training_labels_negs)
 	training_labels[np.where(training_labels==-1)] = 0	
@@ -563,11 +567,17 @@ def get_true_label_cpds(training_labels_negs,go_dict,labels_list=None):
 
 		evidence = []
 		evidence_card = []
+		state_names = {}
 		for child in children:
 			evidence.append(child)
 			evidence_card.append(2)
-		state_names = [label+'_0',label+'_1']
-		cpd = TabularCPD(label,2,data,evidence=evidence,evidence_card=evidence_card,state_names=state_names)
+			state_names[child] = [0,1]
+		# state_names = {label+'_hat':[0,1]}
+		# state_names = [0,1]
+		if use_state_names:
+			cpd = TabularCPD(label,2,data,evidence=evidence,evidence_card=evidence_card,state_names=state_names)
+		else:
+			cpd = TabularCPD(label,2,data,evidence=evidence,evidence_card=evidence_card)
 		cpd.normalize()
 		cpds.append(cpd)
 	pickle.dump(cpds,open(TRUE_LABEL_CPDS_FILE,'wb'))
@@ -577,7 +587,7 @@ def _subtree_labels():
 	return [l.strip() for l in open(DATA_DIR+'subtree.txt','r').readlines()]
 
 
-def make_bayes_net(load=False,subtree=True):
+def make_bayes_net(load=False,subtree=True,modelsdir=MODEL_CPDS_DIR):
 	print('Making bayes net')
 	graph_file = RUNNING_MODEL_DIR+'/'+'graph.p'
 	if os.path.isfile(graph_file) and load==True:
@@ -602,7 +612,7 @@ def make_bayes_net(load=False,subtree=True):
 			for child in children:
 				G.add_edge(child,label)
 		
-		predicted_cpds = get_model_cpds(labels_list=labels_list)
+		predicted_cpds = get_model_cpds(labels_list=labels_list,modelsdir=MODEL_CPDS_DIR)
 		for cpd in predicted_cpds:
 			G.add_cpds(cpd)
 		true_label_cpds = get_true_label_cpds(training_labels,go_dict,labels_list=labels_list)
@@ -652,10 +662,10 @@ def MakeModelCpds(hash='*',subtree=False,use_state_names=False,outputdir=MODEL_C
 		make_model_cpds(training_data,training_labels,go_dict,hash,use_state_names,outputdir)
 
 
-def BayesNetPredict(subtree=False,num_test_samples=1):
+def BayesNetPredict(subtree=False,num_test_samples=1000,modelsdir=MODEL_CPDS_DIR,pred=False,prob=False):
 	training_labels, go_dict = load_label_data()
 	training_labels[np.where(training_labels==-1)] = 0
-	model = make_bayes_net(subtree=subtree)
+	model = make_bayes_net(subtree=subtree,modelsdir=modelsdir)
 	test_labels = make_label_set(training_labels,rstate=RandomState(seed=RAND_SEED+2))
 	bayes_nodes = model.nodes()
 	
@@ -668,61 +678,32 @@ def BayesNetPredict(subtree=False,num_test_samples=1):
 			idxs.append(go_dict[goid])
 	ftest_labels = test_labels[:,idxs]
 	predict_data = pd.DataFrame(ftest_labels[0:num_test_samples],columns=columns)
-	y_pred = model.predict(predict_data)
-	y_prob = model.predict_probability(predict_data)
-	pdb.set_trace()
-	# print(y_pred)
+
 	timestring = time.strftime("%m-%d-%H.%M")
-	pickle.dump(y_pred,open('y_pred_'+timestring+'.p','wb'))
+	if pred:
+		y_pred = model.predict(predict_data)
+		pickle.dump(y_pred,open('y_pred_'+timestring+'.p','wb'))
+		print(y_pred)
+	if prob:
+		y_prob = model.predict_probability(predict_data)
+		y_true = test_labels[0:num_test_samples,:]
+		pdb.set_trace()
+		auc_score = metrics.roc_auc_score(y_true,y_prob)
 
-	acc_dict = {}
-	for c in y_pred.columns:
-		y_pred_c = y_pred[c]
-		true_labels = test_labels[:,go_dict[c]][0:num_test_samples]
-		num_correct = (y_pred_c.values==true_labels.flatten()).sum()
-		acc = float(num_correct) / num_test_samples
-		acc_dict[c] = acc
-		print('completed ',c,' ',acc)
-	pickle.dump(acc_dict,open('acc_dict_'+timestring+'.p','wb'))
+		pickle.dump(y_prob,open('y_prob_'+timestring+'.p','wb'))
+		print(y_prob)
+
+	if pred:
+		acc_dict = {}
+		for c in y_pred.columns:
+			y_pred_c = y_pred[c]
+			true_labels = test_labels[:,go_dict[c]][0:num_test_samples]
+			num_correct = (y_pred_c.values==true_labels.flatten()).sum()
+			acc = float(num_correct) / num_test_samples
+			acc_dict[c] = acc
+			print('completed ',c,' ',acc)
+		pickle.dump(acc_dict,open('acc_dict_'+timestring+'.p','wb'))
 	pdb.set_trace()
-
-# def bayes_accuracy(subtree=True):
-# 	print('bayes bayes_accuracy')
-# 	# model = make_bayes_net(subtree=subtree)
-# 	training_labels_negs, go_inv_dict, genes_inv_dict = load_label_data()
-# 	training_labels = np.copy(training_labels_negs)
-# 	training_labels[np.where(training_labels==-1)] = 0
-# 	assert((training_labels!=-1).any())
-# 	test_labels = make_label_set(training_labels,rstate=RandomState(seed=RAND_SEED+2))
-# 	# bayes_nodes = model.nodes()
-# 	bayes_nodes = ['GO:'+l.strip() for l in open(DATA_DIR+'subtree.txt','r').readlines()]
-# 	columns = []
-# 	remove_idxs = []
-# 	for i in range(len(go_inv_dict.keys())):
-# 		node_name = go_inv_dict[i]
-# 		if node_name not in bayes_nodes: remove_idxs.append(i)
-# 		else: columns.append(node_name)
-# 	ftest_labels = np.delete(test_labels,remove_idxs,axis=1)
-# 	ftest_one = ftest_labels[0][np.newaxis,:]
-# 	# predict_data = pd.DataFrame(ftest_labels,columns=columns)
-# 	y_pred = pickle.load(open('y_pred_subtree2.p','rb'))
-# 	# y_pred = model.predict(predict_data)
-# 	# pickle.dump(y_pred,open('y_pred_subtree2.p','wb'))
-
-# 	acc_dict = {}
-# 	# pdb.set_trafce()
-# 	for i in range(len(y_pred.columns)):
-# 		c = y_pred.columns[i]
-# 		y_pred_c = y_pred[c]
-# 		# pdb.set_trace()
-# 		true_labels = ftest_labels[:,i]
-# 		num_correct = (y_pred_c.values==true_labels.flatten()).sum()
-# 		acc = float(num_correct) / training_data.shape[0]
-# 		acc_dict[c] = acc
-# 		open('bayes_acc.txt','a+').write(c+'\t'+str(acc)+'\n')
-# 		print('completed ',c,' ',acc)
-# 	pickle.dump(acc_dict,open('acc_dict.p','wb'))
-# 	pdb.set_trace()
 
 def CompareSvm(subtree=False):
 	print('running svms')
@@ -735,29 +716,37 @@ def CompareSvm(subtree=False):
 	svm_acc_dict = {}
 	
 	for model in models_dict:
-		test_data, test_labels = make_test_set(training_data,training_labels[:,go_dict[model]],rstate=RAND_STATE2)
+		test_data, test_labels, test_idxs = make_test_set(training_data,training_labels[:,go_dict[model]],rstate=RAND_STATE2)
 		mm = models_dict[model]
-		svm_y_pred = mm.predict(test_data)
-		num_correct = (svm_y_pred == test_labels.flatten()).sum()
-		acc = float(num_correct) / training_labels.shape[0]
-		svm_acc_dict[model] = acc
-		with open('compare_acc.txt','a+') as f:
-			try:
-				svm_acc = acc
-				# bayes_acc = bayes_acc_dict[model]
-				f.write(model+'\t'+str(svm_acc)+'\n')
-			except:
-				print(model)
-		print('completed ',model)
-	# bayes_acc_dict = pickle.load(open('acc_dict.p','rb'))
-	
-	# with open('compare_acc.txt','a+') as f:
-	# 	f.write('node\t svm \t bayes'+'\n')
-	# 	for model in models_dict:
-	# 		svm_acc = svm_acc_dict[model]
-	# 		bayes_acc = bayes_acc_dict[model]
-	# 		f.write(model+'\t'+str(svm_acc)+'\t'+str(bayes_acc)+'\n')
+		svm_y_pred = []
+		svm_y_prob = []
+		test_labels_idxs = []
+		for test_idx in test_idxs:
+			estims = [mm.estimators_[i] for i in range(10) if test_idx not in mm.estimators_samples_[i]]
+			if len(estims)>0:
+				p = 0.0
+				for est in estims:
+					est.probability = True
+					p += est.predict_proba(training_data[test_idx:test_idx+1])
+				# pp = 1 if p/len(estims) >= 0.5 else 0
+				# svm_y_pred.append(pp)
+				svm_y_pred.append(np.array(p).mean())
+				test_labels_idxs.append(test_idx)
+		with open('svm_prob_auc.txt','a+'):
+			y_true = training_labels[test_labels_idxs,go_dict[model]].flatten()
+			auc_score = metric.roc_auc_score(y_true,svm_y_prob)
+			f.write(model+'\t'+str(auc_score)+'\n')
+			print(model+'\t'+str(auc_score))
 
+		# # svm_y_pred = mm.predict(test_data)
+		# # num_correct = (np.array(svm_y_pred) == np.array(test_labels)).sum()
+		# num_correct = (np.array(svm_y_pred) == training_labels[test_labels_idxs,go_dict[model]].flatten()).sum()
+		# acc = float(num_correct) / len(test_labels_idxs)
+		# svm_acc_dict[model] = acc
+		# with open('compare_acc.txt','a+') as f:
+		# 	svm_acc = acc
+		# 	f.write(model+'\t'+str(svm_acc)+'\n')
+		# 	print(model+'\t',svm_acc)
 
 
 def DrawGraph(subtree=False):
@@ -785,6 +774,8 @@ parser.add_argument('--cpdhash',default='*')
 parser.add_argument('--subtree',action='store_true',default=False)
 parser.add_argument('--statenames',action='store_true',default=False)
 parser.add_argument('--outputdir',default=None)
+parser.add_argument('--pred',action='store_true',default=False)
+parser.add_argument('--prob',action='store_true',default=False)
 options, action = parser.parse_known_args()
 action = action[0]
 if action == 'ma_parsegds':
@@ -809,7 +800,7 @@ elif action == 'modelcpds':
 elif action == 'makebayes':
 	make_bayes_net(load=(not options.restart))
 elif action == 'runbayes':
-	BayesNetPredict(subtree=options.subtree)
+	BayesNetPredict(subtree=options.subtree,pred=options.pred,prob=options.prob)
 elif action == 'drawgraph':
 	# MakeVisualizationGraph()
 	DrawGraph(subtree=options.subtree)
