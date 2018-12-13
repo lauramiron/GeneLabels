@@ -485,7 +485,7 @@ def make_model_cpds_subtree(training_data,training_labels_negs,go_dict,use_state
 	labels_list = _subtree_labels()
 	for label in labels_list:
 		hash = label.split(':')[-1]
-		cpds += make_model_cpds(training_data,training_labels_negs,go_dict,hash=hash,use_state_names=use_state_names,outputdir=outputdir)
+		cpds += make_model_cpds(training_data,training_labels_negs,go_dict,hash,use_state_names,outputdir)
 	return cpds
 
 def safe_div(x,y):
