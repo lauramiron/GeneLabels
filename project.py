@@ -649,7 +649,7 @@ def MakeModelCpds(hash='*',subtree=False,use_state_names=False,outputdir=MODEL_C
 	if subtree:
 		make_model_cpds_subtree(training_data,training_labels,go_dict,use_state_names,outputdir)
 	else:
-		make_model_cpds(training_data,training_labels,go_dict,hash=hash,use_state_names,outputdir)
+		make_model_cpds(training_data,training_labels,go_dict,hash,use_state_names,outputdir)
 
 
 def BayesNetPredict(subtree=False,num_test_samples=1):
