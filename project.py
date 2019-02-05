@@ -1,6 +1,6 @@
 import pdb, glob, pickle, sys, os, shutil
 import numpy as np
-from sklearn import svm, ensemble
+from sklearn import svm, ensemble, metrics
 from sklearn.neighbors import NearestNeighbors
 # from shlex import quote
 import networkx
@@ -15,8 +15,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 RAND_SEED=0
-RAND_STATE=np.random.RandomState(seed=RAND_SEED)
-RAND_STATE2=np.random.RandomState(seed=RAND_SEED+1)
+RAND_STATE=np.random.RandomState(seed=12)
+RAND_STATE2=np.random.RandomState()
 DATA_DIR =r'data/'
 OUTPUT_DIR=r'output/'
 RESULTS_DIR=r'results/'
@@ -164,17 +164,12 @@ def RunKnnOnNulls():
 			if np.isnan(example[j]):
 				nan_indices.append(j)
 				example[j] = feature_averages[j]
-		if np.isnan(example).any():
-			pdb.set_trace()
 		for j in nan_indices:
 			model, model_data_idxs = models[j]
 			model_data = smoothed_data[model_data_idxs]
 			distances, indices = model.kneighbors(example.reshape(1,-1))
 			centroid = np.average(non_null_data[indices.flatten()],axis=0,weights=(1/distances.flatten()))
-			try:
-				assert(np.isnan(centroid).any()==False)
-			except:
-				pdb.set_trace()
+			assert(np.isnan(centroid).any()==False)
 			data_arr[i,j] = centroid[j]
 		assert(np.isnan(data_arr[i]).any()==False)
 	assert(np.isnan(data_arr).any()==False)
@@ -339,7 +334,7 @@ def GetKMaxLabels(k=1):
 	return -(go_data.sum(axis=0)).argsort()[:k]
 
 
-def LoadCombinedData():
+def LoadCombinedData(): # total: 5395, train: 4316, test: 1079
 	pairwise_data = np.loadtxt(PAIR_DATA_FILE)
 	ma_data = np.loadtxt(MA_NONNULL_DATA)
 	data = np.concatenate((pairwise_data,ma_data),axis=1)
@@ -347,14 +342,28 @@ def LoadCombinedData():
 	assert(data.shape[0]==label_data.shape[0])
 	go_dict = pickle.load(open(GO_DICT_FILE,'rb'))
 	genes_dict = pickle.load(open(GENES_DICT_FILE,'rb'))
-	return data, label_data, {v: k for k, v in go_dict.items()}, {v: k for k, v in genes_dict.items()}
+	training_idxs = RandomState(seed=4).choice(range(0,5394),size=4316,replace=False)
+	return data[training_idxs,:], label_data[training_idxs,:], {v: k for k, v in go_dict.items()}, {v: k for k, v in genes_dict.items()}
+
+def LoadValidationData(): # total: 5395, train: 4316, test: 1079
+	pairwise_data = np.loadtxt(PAIR_DATA_FILE)
+	ma_data = np.loadtxt(MA_NONNULL_DATA)
+	data = np.concatenate((pairwise_data,ma_data),axis=1)
+	label_data = np.loadtxt(GO_LABEL_ARR_FILE)
+	assert(data.shape[0]==label_data.shape[0])
+	go_dict = pickle.load(open(GO_DICT_FILE,'rb'))
+	genes_dict = pickle.load(open(GENES_DICT_FILE,'rb'))
+	training_idxs = RandomState(seed=4).choice(range(0,5394),size=4316,replace=False)
+	test_idxs = [i for i in range(0,data.shape[0]) if i not in training_idxs]
+	return data, label_data, go_dict
 
 
 def load_label_data():
 	label_data = np.loadtxt(GO_LABEL_ARR_FILE)
 	assert(label_data.shape[0]==label_data.shape[0])
 	go_dict = pickle.load(open(GO_DICT_FILE,'rb'))
-	return label_data, go_dict
+	training_idxs = RandomState(seed=4).choice(range(0,5394),size=4316,replace=False)
+	return label_data[training_idxs,:], go_dict
 
 
 def _timeModelDir(model_name='lineardefault'):
@@ -364,9 +373,10 @@ def _timeModelDir(model_name='lineardefault'):
 	return dirname
 
 
-def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto',n_estimators=1,resume=True,startID=0,subtree=False):
+def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto',n_estimators=1,resume=False,startID=0,subtree=False):
 	print('-----Running SVM on all GO IDs-----')   
 	training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
+	print(len(training_labels))
 	# models_dict = {}
 
 	model_dir = RUNNING_MODEL_DIR
@@ -397,13 +407,13 @@ def DefaultParametersFullData(kernel='linear',C=1.0,gamma='auto',n_estimators=1,
 	# os.rename(model_dir,_timeModelDir(model_name='lineardefault'))
 
 
-def make_test_set(training_examples,training_labels,rstate=RAND_STATE,num_test_samples=None):
+def make_test_set(training_examples,training_labels,rstate=RAND_STATE,num_test_samples=None,idxs=None):
 	num_test_samples = int(training_examples.shape[0]*0.632) if (num_test_samples == None) else num_test_samples
-	test_idxs = rstate.choice(range(0,training_examples.shape[0]),size=num_test_samples,replace=True)
-	test_set = np.zeros(shape=(num_test_samples,training_examples.shape[1]))
+	test_idxs = rstate.choice(range(0,training_examples.shape[0]),size=num_test_samples,replace=True) if idxs==None else idxs
+	test_set = np.zeros(shape=(len(test_idxs),training_examples.shape[1]))
 	label_shape = 1 if (len(training_labels.shape) < 2) else training_labels.shape[1]
-	test_labels = np.zeros(shape=(num_test_samples,label_shape))
-	for i in range(0,num_test_samples):
+	test_labels = np.zeros(shape=(len(test_idxs),label_shape))
+	for i in range(0,len(test_idxs)):
 		test_set[i] = training_examples[test_idxs[i]]
 		test_labels[i] = training_labels[test_idxs[i]]
 	return test_set, test_labels, test_idxs
@@ -420,7 +430,7 @@ def make_label_set(training_labels,rstate=RAND_STATE,num_test_samples=None):
 def test_svm_model(kernel, training_examples, training_labels, C=1.0, gamma='auto',n_estimators=10):
 	model = ensemble.BaggingClassifier(svm.SVC(kernel=kernel, gamma=gamma, random_state=RAND_SEED, probability=True), n_estimators=n_estimators,max_samples=0.632)
 	model.fit(training_examples, training_labels)
-	test_set, test_labels = make_test_set(training_examples,training_labels)
+	test_set, test_labels, test_idxs = make_test_set(training_examples,training_labels)
 	test_score = model.score(test_set, test_labels)
 	get_true_false_positive_negative(model.predict(test_set),test_labels)
 	return model, test_score
@@ -485,6 +495,17 @@ def get_model_cpds(labels_list=None,modelsdir=MODEL_CPDS_DIR,use_state_names=Fal
 			cpds.append(cpd)
 	return cpds
 
+def get_model_cpds2(labels_list=None,modelsdir=MODEL_CPDS_DIR,use_state_names=False):
+	cpds = []
+	for file_name in glob.glob(modelsdir+'/*'):
+		if (labels_list==None) or ('GO:'+file_name.split('/')[-1].split('.')[0] in labels_list):
+			print(file_name)
+			cpd = pickle.load(open(file_name,'rb'))
+			if not use_state_names:
+				cpd = TabularCPD(cpd.variable,cpd.variable_card,cpd.values,cpd.variables[1:],cpd.cardinality[1:])
+			cpds.append(cpd)
+	return cpds
+
 def make_model_cpds_subtree(training_data,training_labels_negs,go_dict,use_state_names=False,outputdir=MODEL_CPDS_STATES_DIR):
 	print('making model cpds for subtree only')
 	cpds = []
@@ -519,7 +540,8 @@ def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*',subtree=
 		if model == None:
 			print('NO DATA for ',model_name,', skipping...')
 			continue
-		validation_data, validation_labels, _ = make_test_set(training_data,training_labels[:,go_dict[model_name]],rstate=RAND_STATE2)
+		validation_data, validation_labels, validation_idxs = make_test_set(training_data,training_labels[:,go_dict[model_name]],rstate=RAND_STATE2)
+		# validation_data, validation_labels, validation_idxs = make_test_set(training_data,training_labels[:,go_dict[model_name]],idxs=)
 		validation_labels = validation_labels.flatten()
 		y_pred = model.predict(validation_data)
 		yhat0_y0 = safe_div((1-y_pred[validation_labels==0]).sum(),(1-validation_labels).sum())
@@ -540,7 +562,7 @@ def make_model_cpds(training_data,training_labels_negs,go_dict,hash='*',subtree=
 			os.mkdir(outputdir)
 		pickle.dump(cpd,open(outputdir+'/'+model_name.split(':')[1]+'.p','wb'))
 	# pickle.dump(cpds,open(MODEL_CPDS_FILE,'wb'))
-	return cpds
+	return cpds, validation_idxs
 
 
 def get_true_label_cpds(training_labels_negs,go_dict,labels_list=None,use_state_names=False):
@@ -622,7 +644,6 @@ def make_bayes_net(load=False,subtree=True,modelsdir=MODEL_CPDS_DIR):
 		for cpd in true_label_cpds:
 			G.add_cpds(cpd)
 		remove_list = []
-		# pdb.set_trace()
 		for node in G.nodes():
 			if G.get_cpds(node) == None: 
 				remove_list.append(node)
@@ -654,7 +675,7 @@ def make_simple_bayes_net(subtree=False):
 			G.add_edge(label,child)
 	return G	
 
-def MakeModelCpds(hash='*',subtree=False,use_state_names=False,outputdir=MODEL_CPDS_DIR):
+def MakeModelCpds(hash='*',subtree=True,use_state_names=False,outputdir=MODEL_CPDS_DIR):
 	print('-------- Making model cpds -------')
 	print('loading data...')
 	training_data, training_labels, inv_go_dict, inv_genes_dict = LoadCombinedData()
@@ -665,13 +686,25 @@ def MakeModelCpds(hash='*',subtree=False,use_state_names=False,outputdir=MODEL_C
 		make_model_cpds(training_data,training_labels,go_dict,hash,use_state_names,outputdir)
 
 
-def BayesNetPredict(subtree=False,num_test_samples=1000,modelsdir=MODEL_CPDS_DIR,pred=False,prob=False):
-	training_labels, go_dict = load_label_data()
-	training_labels[np.where(training_labels==-1)] = 0
+def BayesNetPredict(subtree=False,num_test_samples=10,modelsdir=MODEL_CPDS_DIR,pred=False,prob=False):
+	validation_data, validation_labels, go_dict = LoadValidationData()
+	# go_dict = {v: k for k, v in go_inv_dict.items()}
+	validation_labels[np.where(validation_labels==-1)] = 0
 	model = make_bayes_net(subtree=subtree,modelsdir=modelsdir)
-	test_labels = make_label_set(training_labels,rstate=RandomState(seed=RAND_SEED+2))
+	
+	predicted_labels = np.zeros(shape=validation_labels.shape)
+	models_dict = _load_models_dict_subtree()
+	for ii in models_dict:
+		print('hi')
+		mm = models_dict[ii]
+		if mm != None:
+			y_pred = mm.predict_proba(validation_data)
+			predicted_labels[:,go_dict[ii]] = y_pred[:,1]
+		# pdb.set_trace()
+	# test_labels = make_label_set(training_labels,rstate=RandomState(seed=RAND_SEED+10))
 	bayes_nodes = model.nodes()
 	
+	pdb.set_trace()
 	columns = []
 	idxs = []
 	for goid in go_dict:
@@ -679,45 +712,57 @@ def BayesNetPredict(subtree=False,num_test_samples=1000,modelsdir=MODEL_CPDS_DIR
 		if node_name in bayes_nodes: 
 			columns.append(node_name)
 			idxs.append(go_dict[goid])
-	ftest_labels = test_labels[:,idxs]
-	predict_data = pd.DataFrame(ftest_labels[0:num_test_samples],columns=columns)
+	ftest_labels = predicted_labels[:,idxs]
+	predict_data = pd.DataFrame(ftest_labels[0:num_test_samples,:],columns=columns)
 
 	timestring = time.strftime("%m-%d-%H.%M")
-	if pred:
-		y_pred = model.predict(predict_data)
-		pickle.dump(y_pred,open('y_pred_'+timestring+'.p','wb'))
-		print(y_pred)
+	y_pred = model.predict(predict_data)
+	pickle.dump(y_pred,open('y_pred_'+timestring+'.p','wb'))
+	print(y_pred)
 	if prob:
 		y_prob = model.predict_probability(predict_data)
-		y_true = test_labels[0:num_test_samples,:]
 		pdb.set_trace()
-		auc_score = metrics.roc_auc_score(y_true,y_prob)
-
-		pickle.dump(y_prob,open('y_prob_'+timestring+'.p','wb'))
-		print(y_prob)
-
-	if pred:
-		acc_dict = {}
-		for c in y_pred.columns:
-			y_pred_c = y_pred[c]
-			true_labels = test_labels[:,go_dict[c]][0:num_test_samples]
-			num_correct = (y_pred_c.values==true_labels.flatten()).sum()
-			acc = float(num_correct) / num_test_samples
-			acc_dict[c] = acc
-			print('completed ',c,' ',acc)
-		pickle.dump(acc_dict,open('acc_dict_'+timestring+'.p','wb'))
+		with open('bayes_auc_NEW_EXCLUDED.txt','w+') as f:
+			for c in y_prob.columns:
+				try:
+					y_pred_c = y_pred[c]
+					y_true = validation_labels[0:num_test_samples,go_dict[c]]
+					num_correct = (y_pred_c.values==y_true.flatten()).sum()
+					acc = float(num_correct) / len(y_pred_c)
+					auc_score = metrics.roc_auc_score(y_true,y_prob[c])
+					f.write(c+'\t'+str(acc)+'\t'+str(auc_score)+'\n')
+					print(c+'\t'+str(acc)+'\t'+str(auc_score))
+				except:
+					f.write(c+'\tNan\n')
+					print(c+'\tNan')
+		# pickle.dump(y_prob,open('y_prob_'+timestring+'.p','wb'))
+		# print(y_prob)
+	# if pred:
+	# 	acc_dict = {}
+	# 	with open('bayes_acc.txt','w+') as f:			
+	# 		for c in y_pred.columns:
+	# 			y_pred_c = y_pred[c]
+	# 			true_labels = test_labels[:,go_dict[c]][0:num_test_samples]
+	# 			num_correct = (y_pred_c.values==true_labels.flatten()).sum()
+	# 			acc = float(num_correct) / num_test_samples
+	# 			acc_dict[c] = acc
+	# 			f.write(c+'\t'+acc)
+	# 			print('completed ',c,' ',acc)
+	# 	pickle.dump(acc_dict,open('acc_dict_'+timestring+'.p','wb'))
 	pdb.set_trace()
 
 def CompareSvm(subtree=False):
 	print('running svms')
 	y_pred_bayes = pickle.load(open('y_pred_subtree.p','rb'))
-	training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()	
+	training_data, training_labels, go_inv_dict, genes_inv_dict = LoadCombinedData()
+	training_labels[np.where(training_labels==-1)] = 0
 	go_dict = {v: k for k, v in go_inv_dict.items()}
 	bayes_model = make_simple_bayes_net()
 	columns = y_pred_bayes.columns
 	models_dict = _load_models_dict_list(columns)
 	svm_acc_dict = {}
 	
+	pdb.set_trace()
 	for model in models_dict:
 		test_data, test_labels, test_idxs = make_test_set(training_data,training_labels[:,go_dict[model]],rstate=RAND_STATE2)
 		mm = models_dict[model]
@@ -725,22 +770,28 @@ def CompareSvm(subtree=False):
 		svm_y_prob = []
 		test_labels_idxs = []
 		for test_idx in test_idxs:
-			estims = [mm.estimators_[i] for i in range(10) if test_idx not in mm.estimators_samples_[i]]
-			if len(estims)>0:
-				p = 0.0
-				for est in estims:
-					est.probability = True
-					p += est.predict_proba(training_data[test_idx:test_idx+1])
-				# pp = 1 if p/len(estims) >= 0.5 else 0
-				# svm_y_pred.append(pp)
-				svm_y_pred.append(np.array(p).mean())
-				test_labels_idxs.append(test_idx)
-		with open('svm_prob_auc.txt','a+'):
+			estims = [mm.estimators_[i] for i in range(len(mm.estimators_)) if test_idx not in mm.estimators_samples_[i]]
+			if len(estims)<1: estims = mm.estimators_
+			p = 0.0
+			for est in estims:
+				est.probability = True
+				p += est.predict_proba(training_data[test_idx:test_idx+1])[0,1]
+			pp = 1 if np.array(p).mean() >= 0.5 else 0
+			svm_y_pred.append(pp)
+			svm_y_prob.append(np.array(p).mean())
+			test_labels_idxs.append(test_idx)
+		with open('svm_prob_auc_NEW_NOEXCLUDED_RAND.txt','a+') as f:
 			y_true = training_labels[test_labels_idxs,go_dict[model]].flatten()
-			auc_score = metric.roc_auc_score(y_true,svm_y_prob)
-			f.write(model+'\t'+str(auc_score)+'\n')
-			print(model+'\t'+str(auc_score))
-
+			num_correct = (np.array(svm_y_pred) == y_true).sum()
+			acc = float(num_correct) / len(test_labels_idxs)
+			try:
+				auc_score = metrics.roc_auc_score(y_true,svm_y_prob)
+			except:
+				auc_score = 'N/A'
+			f.write(model+'\t'+str(acc)+'\t'+str(auc_score)+'\n')
+			print(model+'\t'+str(acc)+'\t'+str(auc_score))
+			get_true_false_positive_negative(y_true,svm_y_pred)
+	pdb.set_trace()
 		# # svm_y_pred = mm.predict(test_data)
 		# # num_correct = (np.array(svm_y_pred) == np.array(test_labels)).sum()
 		# num_correct = (np.array(svm_y_pred) == training_labels[test_labels_idxs,go_dict[model]].flatten()).sum()
